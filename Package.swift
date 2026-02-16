@@ -12,5 +12,9 @@ let package = Package(
         .executableTarget(
             name: "VibeScrib"
         ),
+        .testTarget(
+            name: "VibeScribTests",
+            dependencies: ["VibeScrib"]
+        ),
     ]
 )

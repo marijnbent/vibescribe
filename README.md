@@ -15,12 +15,21 @@ A tiny macOS menu bar app for push-to-talk transcription with Deepgram.
 - macOS 13+
 - Xcode or the Swift toolchain that ships with your current macOS
 
-## Run
+## Install
+Run from source (development):
 ```bash
 swift run
 ```
 
-## Setup
+Package a `.app` bundle for permanent install:
+```bash
+bash Scripts/package_app.sh
+```
+This creates `VibeScrib.app` in the repo root. Move it to `/Applications`, launch it once, then add it to Login Items to run at login (System Settings > General > Login Items).
+
+To customize the bundle name, id, or version, edit `version.env`.
+
+## Usage
 1. Launch the app (it appears in the menu bar).
 2. Open the main window and paste your Deepgram API key.
 3. Hold the push-to-talk hotkey to start streaming.
@@ -33,6 +42,15 @@ swift run
 - Hotkey: `Sources/VibeScrib/HotkeyListener.swift`
 - Overlay UI: `Sources/VibeScrib/UI/OverlayView.swift`
 - Deepgram model (Nova 3 + `language=multi`): `Sources/VibeScrib/DeepgramClient.swift`
+
+## Contributing
+Issues and PRs are welcome.
+1. Open an issue describing the change or bug.
+2. Keep changes focused and avoid adding backward-compatibility logic unless needed.
+3. If you add tests, include updates in the same PR and run `swift test`.
+
+## License
+MIT license. In short, you can use, modify, and distribute the code (including commercially) as long as you keep the copyright notice and license text, and there is no warranty. See `LICENSE`.
 
 ## Notes
 This is intentionally minimal to keep the architecture easy to extend. The API key is stored in `UserDefaults` in plaintext for convenience.
