@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key><string>VibeScrib</string>
+    <key>CFBundleDisplayName</key><string>VibeScrib</string>
+    <key>CFBundleIdentifier</key><string>io.m10s.vibescrib</string>
+    <key>CFBundleExecutable</key><string>VibeScrib</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>LSMinimumSystemVersion</key><string>13.0</string>
+    <key>LSUIElement</key><true/>
+    <key>CFBundleIconFile</key><string>Icon</string>
+    <key>NSMicrophoneUsageDescription</key><string>VibeScrib needs microphone access to transcribe speech.</string>
+    <key>NSInputMonitoringUsageDescription</key><string>VibeScrib needs input monitoring to capture the push-to-talk hotkey.</string>
+    <key>NSAccessibilityUsageDescription</key><string>VibeScrib needs accessibility access to paste transcripts into other apps.</string>
+    <key>BuildTimestamp</key><string>2026-02-17T08:22:35Z</string>
+    <key>GitCommit</key><string>9519ed6</string>
+</dict>
+</plist>
