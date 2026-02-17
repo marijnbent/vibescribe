@@ -5,7 +5,7 @@ import Foundation
 
 @MainActor
 final class AppState: ObservableObject {
-    private static let apiKeyKey = "VibeScrib.ApiKey"
+    private static let apiKeyKey = "VibeScribe.ApiKey"
 
     @Published var isRecording = false
     @Published var statusMessage = "Idle"

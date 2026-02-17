@@ -9,7 +9,7 @@ enum AppMenuBuilder {
 
         let appMenu = NSMenu()
         appMenu.addItem(
-            withTitle: "Quit VibeScrib",
+            withTitle: "Quit VibeScribe",
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )

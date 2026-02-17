@@ -4,17 +4,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "VibeScrib",
+    name: "VibeScribe",
     platforms: [
         .macOS(.v13),
     ],
     targets: [
         .executableTarget(
-            name: "VibeScrib"
+            name: "VibeScribe"
         ),
         .testTarget(
-            name: "VibeScribTests",
-            dependencies: ["VibeScrib"]
+            name: "VibeScribeTests",
+            dependencies: ["VibeScribe"]
         ),
     ]
 )

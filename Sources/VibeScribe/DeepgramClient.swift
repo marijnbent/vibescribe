@@ -3,7 +3,7 @@ import AVFoundation
 
 final class DeepgramClient: NSObject, @unchecked Sendable {
     private let session: URLSession
-    private let queue = DispatchQueue(label: "VibeScrib.DeepgramClient")
+    private let queue = DispatchQueue(label: "VibeScribe.DeepgramClient")
     private let queueKey = DispatchSpecificKey<Void>()
     private var task: URLSessionWebSocketTask?
     private var isConnected = false

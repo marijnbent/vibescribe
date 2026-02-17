@@ -16,7 +16,7 @@ final class MenuBarController {
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
-        statusItem.button?.title = "VibeScrib"
+        statusItem.button?.title = "VibeScribe"
 
         let menu = NSMenu()
 

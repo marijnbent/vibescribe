@@ -21,7 +21,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
                 backing: .buffered,
                 defer: false
             )
-            window.title = "VibeScrib"
+            window.title = "VibeScribe"
             window.contentViewController = hosting
             window.center()
             window.isReleasedWhenClosed = false

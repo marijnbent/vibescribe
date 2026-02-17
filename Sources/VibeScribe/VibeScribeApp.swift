@@ -5,10 +5,10 @@ import SwiftUI
 
 @MainActor
 @main
-final class VibeScribApp: NSObject, NSApplicationDelegate {
+final class VibeScribeApp: NSObject, NSApplicationDelegate {
     static func main() {
         let app = NSApplication.shared
-        let delegate = VibeScribApp()
+        let delegate = VibeScribeApp()
         app.delegate = delegate
         app.run()
     }
@@ -65,7 +65,7 @@ final class VibeScribApp: NSObject, NSApplicationDelegate {
         )
 
         appState.requestInitialPermissionsIfNeeded()
-        appState.addLog("VibeScrib launched.", level: .info)
+        appState.addLog("VibeScribe launched.", level: .info)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

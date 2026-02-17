@@ -76,7 +76,7 @@ struct MainView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("VibeScrib")
+            Text("VibeScribe")
                 .font(.system(size: 28, weight: .semibold))
             Text("Push-to-talk transcription powered by Deepgram")
                 .foregroundStyle(.secondary)

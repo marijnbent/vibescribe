@@ -1,9 +1,9 @@
 import XCTest
-@testable import VibeScrib
+@testable import VibeScribe
 
 @MainActor
 final class AppStateTests: XCTestCase {
-    private let apiKeyDefaultsKey = "VibeScrib.ApiKey"
+    private let apiKeyDefaultsKey = "VibeScribe.ApiKey"
 
     override func setUp() {
         super.setUp()

@@ -9,8 +9,8 @@ if [[ -f "$ROOT/version.env" ]]; then
   source "$ROOT/version.env"
 fi
 
-APP_NAME=${APP_NAME:-VibeScrib}
-BUNDLE_ID=${BUNDLE_ID:-io.m10s.vibescrib}
+APP_NAME=${APP_NAME:-VibeScribe}
+BUNDLE_ID=${BUNDLE_ID:-io.m10s.vibescribe}
 MACOS_MIN_VERSION=${MACOS_MIN_VERSION:-13.0}
 MENU_BAR_APP=${MENU_BAR_APP:-1}
 SIGNING_MODE=${SIGNING_MODE:-}
@@ -18,9 +18,9 @@ APP_IDENTITY=${APP_IDENTITY:-}
 
 MARKETING_VERSION=${MARKETING_VERSION:-0.1.0}
 BUILD_NUMBER=${BUILD_NUMBER:-1}
-MIC_USAGE=${MIC_USAGE:-"VibeScrib needs microphone access to transcribe speech."}
-INPUT_MONITORING_USAGE=${INPUT_MONITORING_USAGE:-"VibeScrib needs input monitoring to capture the push-to-talk hotkey."}
-ACCESSIBILITY_USAGE=${ACCESSIBILITY_USAGE:-"VibeScrib needs accessibility access to paste transcripts into other apps."}
+MIC_USAGE=${MIC_USAGE:-"VibeScribe needs microphone access to transcribe speech."}
+INPUT_MONITORING_USAGE=${INPUT_MONITORING_USAGE:-"VibeScribe needs input monitoring to capture the push-to-talk hotkey."}
+ACCESSIBILITY_USAGE=${ACCESSIBILITY_USAGE:-"VibeScribe needs accessibility access to paste transcripts into other apps."}
 
 ARCH_LIST=( ${ARCHES:-} )
 if [[ ${#ARCH_LIST[@]} -eq 0 ]]; then

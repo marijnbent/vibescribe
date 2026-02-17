@@ -1,6 +1,8 @@
-# VibeScrib
+# VibeScribe
 
-A tiny macOS menu bar app for push-to-talk transcription with Deepgram.
+![VibeScribe header](assets/readme-header.png)
+
+A blazing fast transcription app with smart formatting, powered by Deepgram.
 
 ## What this gives you
 - Menu bar status item (Settings + Quit)
@@ -36,11 +38,13 @@ Package a `.app` bundle for permanent install:
 ```bash
 bash Scripts/package_app.sh
 ```
-This creates `VibeScrib.app` in the repo root. Move it to `/Applications`, launch it once, then add it to Login Items to run at login (System Settings > General > Login Items).
+This creates `VibeScribe.app` in the repo root. Move it to `/Applications`, launch it once, then add it to Login Items to run at login (System Settings > General > Login Items).
 
 To customize the bundle name, id, or version, edit `version.env`.
 
 ## Usage
+Sign up for a free Deepgram API key at https://console.deepgram.com (new accounts typically include ~$200 in free credit).
+
 1. Launch the app (it appears in the menu bar).
 2. Open the main window and paste your Deepgram API key.
 3. Hold the push-to-talk hotkey to start streaming.
@@ -50,9 +54,9 @@ To customize the bundle name, id, or version, edit `version.env`.
 - For global hotkeys, macOS may prompt for Input Monitoring or Accessibility permissions.
 
 ## Customization
-- Hotkey: `Sources/VibeScrib/HotkeyListener.swift`
-- Overlay UI: `Sources/VibeScrib/UI/OverlayView.swift`
-- Deepgram model (Nova 3 + `language=multi`): `Sources/VibeScrib/DeepgramClient.swift`
+- Hotkey: `Sources/VibeScribe/HotkeyListener.swift`
+- Overlay UI: `Sources/VibeScribe/UI/OverlayView.swift`
+- Deepgram model (Nova 3 + `language=multi`): `Sources/VibeScribe/DeepgramClient.swift`
 
 ## Contributing
 Issues and PRs are welcome.
