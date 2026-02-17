@@ -6,7 +6,6 @@ import Foundation
 @MainActor
 final class AppState: ObservableObject {
     private static let apiKeyKey = "VibeScrib.ApiKey"
-    private static let accessibilityPromptedKey = "VibeScrib.AccessibilityPrompted"
 
     @Published var isRecording = false
     @Published var statusMessage = "Idle"
@@ -93,19 +92,18 @@ extension AppState {
     }
 
     func requestAccessibilityPermission() {
-        UserDefaults.standard.set(true, forKey: Self.accessibilityPromptedKey)
         let promptKey = "AXTrustedCheckOptionPrompt" as CFString
         _ = AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
         refreshPermissions()
     }
 
     func requestInitialPermissionsIfNeeded() {
+        refreshPermissions()
         if microphonePermission == .notDetermined {
             requestMicrophonePermission()
         }
 
-        if accessibilityPermission != .authorized
-            && !UserDefaults.standard.bool(forKey: Self.accessibilityPromptedKey) {
+        if accessibilityPermission != .authorized {
             requestAccessibilityPermission()
         }
     }

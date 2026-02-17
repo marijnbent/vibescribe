@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class MainWindowController {
+final class MainWindowController: NSObject, NSWindowDelegate {
     private let appState: AppState
     private var window: NSWindow?
 
@@ -24,11 +24,17 @@ final class MainWindowController {
             window.title = "VibeScrib"
             window.contentViewController = hosting
             window.center()
+            window.isReleasedWhenClosed = false
+            window.delegate = self
 
             self.window = window
         }
 
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        window = nil
     }
 }
