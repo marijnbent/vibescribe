@@ -83,10 +83,11 @@ extension AppState {
         accessibilityPermission = AXIsProcessTrusted() ? .authorized : .denied
     }
 
-    func requestMicrophonePermission() {
+    func requestMicrophonePermission(completion: (() -> Void)? = nil) {
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshPermissions()
+                completion?()
             }
         }
     }
@@ -100,9 +101,17 @@ extension AppState {
     func requestInitialPermissionsIfNeeded() {
         refreshPermissions()
         if microphonePermission == .notDetermined {
-            requestMicrophonePermission()
+            requestMicrophonePermission { [weak self] in
+                self?.requestAccessibilityPermissionIfNeeded()
+            }
+            return
         }
 
+        requestAccessibilityPermissionIfNeeded()
+    }
+
+    private func requestAccessibilityPermissionIfNeeded() {
+        refreshPermissions()
         if accessibilityPermission != .authorized {
             requestAccessibilityPermission()
         }
