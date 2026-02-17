@@ -24,6 +24,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private var isLatchedRecording = false
     private let hotkeyTapThreshold: TimeInterval = 0.25
     private let stopDelay: TimeInterval = 0.2
+    private let clipboardRestoreDelay: TimeInterval = 0.2
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -228,7 +229,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
         appState.addLog("Paste command sent (Cmd+V).", level: .info)
 
-        DispatchQueue.main.async {
+        DispatchQueue.main.asyncAfter(deadline: .now() + clipboardRestoreDelay) {
             snapshot.restore(to: pasteboard)
         }
     }
