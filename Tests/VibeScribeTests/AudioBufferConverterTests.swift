@@ -1,6 +1,6 @@
 import AVFoundation
 import XCTest
-@testable import VibeScribe
+@testable import VibeScribeCore
 
 final class AudioBufferConverterTests: XCTestCase {
     func testLinear16DataConvertsFloatSamples() {

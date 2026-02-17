@@ -9,12 +9,16 @@ let package = Package(
         .macOS(.v13),
     ],
     targets: [
+        .target(
+            name: "VibeScribeCore"
+        ),
         .executableTarget(
-            name: "VibeScribe"
+            name: "VibeScribe",
+            dependencies: ["VibeScribeCore"]
         ),
         .testTarget(
             name: "VibeScribeTests",
-            dependencies: ["VibeScribe"]
+            dependencies: ["VibeScribeCore"]
         ),
     ]
 )

@@ -4,9 +4,8 @@ import Carbon
 import SwiftUI
 
 @MainActor
-@main
-final class VibeScribeApp: NSObject, NSApplicationDelegate {
-    static func main() {
+public final class VibeScribeApp: NSObject, NSApplicationDelegate {
+    public static func main() {
         let app = NSApplication.shared
         let delegate = VibeScribeApp()
         app.delegate = delegate
@@ -26,7 +25,7 @@ final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private let hotkeyTapThreshold: TimeInterval = 0.25
     private let stopDelay: TimeInterval = 0.2
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = AppMenuBuilder.build()
 
@@ -73,7 +72,7 @@ final class VibeScribeApp: NSObject, NSApplicationDelegate {
         appState.addLog("VibeScribe launched.", level: .info)
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
+    public func applicationWillTerminate(_ notification: Notification) {
         NotificationCenter.default.removeObserver(
             self,
             name: NSApplication.didBecomeActiveNotification,

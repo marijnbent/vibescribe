@@ -1,5 +1,5 @@
 import XCTest
-@testable import VibeScribe
+@testable import VibeScribeCore
 
 final class StringTrimTests: XCTestCase {
     func testTrimmedRemovesWhitespaceAndNewlines() {

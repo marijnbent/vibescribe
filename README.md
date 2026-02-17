@@ -56,9 +56,9 @@ swift test
 - For global hotkeys, macOS may prompt for Input Monitoring or Accessibility permissions.
 
 ## Customization
-- Hotkey: `Sources/VibeScribe/HotkeyListener.swift`
-- Overlay UI: `Sources/VibeScribe/UI/OverlayView.swift`
-- Deepgram model (Nova 3 + `language=multi`): `Sources/VibeScribe/DeepgramClient.swift`
+- Hotkey: `Sources/VibeScribeCore/HotkeyListener.swift`
+- Overlay UI: `Sources/VibeScribeCore/UI/OverlayView.swift`
+- Deepgram model (Nova 3 + `language=multi`): `Sources/VibeScribeCore/DeepgramClient.swift`
 
 ## Contributing
 Issues and PRs are welcome.
