@@ -102,7 +102,9 @@ extension AppState {
         refreshPermissions()
         if microphonePermission == .notDetermined {
             requestMicrophonePermission { [weak self] in
-                self?.requestAccessibilityPermissionIfNeeded()
+                Task { @MainActor in
+                    self?.requestAccessibilityPermissionIfNeeded()
+                }
             }
             return
         }
