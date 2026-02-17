@@ -36,11 +36,26 @@ APP="$ROOT/${APP_NAME}.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 
-# Convert Icon.icon to Icon.icns if present (requires iconutil).
+# Convert Icon.icon or Icon.png to Icon.icns if present (requires iconutil).
 ICON_SOURCE="$ROOT/Icon.icon"
+ICON_PNG_SOURCE="$ROOT/Icon.png"
 ICON_TARGET="$ROOT/Icon.icns"
 if [[ -f "$ICON_SOURCE" ]]; then
   iconutil --convert icns --output "$ICON_TARGET" "$ICON_SOURCE"
+elif [[ -f "$ICON_PNG_SOURCE" ]]; then
+  ICONSET_DIR="$ROOT/.build/icon.iconset"
+  mkdir -p "$ICONSET_DIR"
+  sips -z 16 16 "$ICON_PNG_SOURCE" --out "$ICONSET_DIR/icon_16x16.png" >/dev/null
+  sips -z 32 32 "$ICON_PNG_SOURCE" --out "$ICONSET_DIR/icon_16x16@2x.png" >/dev/null
+  sips -z 32 32 "$ICON_PNG_SOURCE" --out "$ICONSET_DIR/icon_32x32.png" >/dev/null
+  sips -z 64 64 "$ICON_PNG_SOURCE" --out "$ICONSET_DIR/icon_32x32@2x.png" >/dev/null
+  sips -z 128 128 "$ICON_PNG_SOURCE" --out "$ICONSET_DIR/icon_128x128.png" >/dev/null
+  sips -z 256 256 "$ICON_PNG_SOURCE" --out "$ICONSET_DIR/icon_128x128@2x.png" >/dev/null
+  sips -z 256 256 "$ICON_PNG_SOURCE" --out "$ICONSET_DIR/icon_256x256.png" >/dev/null
+  sips -z 512 512 "$ICON_PNG_SOURCE" --out "$ICONSET_DIR/icon_256x256@2x.png" >/dev/null
+  sips -z 512 512 "$ICON_PNG_SOURCE" --out "$ICONSET_DIR/icon_512x512.png" >/dev/null
+  sips -z 1024 1024 "$ICON_PNG_SOURCE" --out "$ICONSET_DIR/icon_512x512@2x.png" >/dev/null
+  iconutil --convert icns --output "$ICON_TARGET" "$ICONSET_DIR"
 fi
 
 LSUI_VALUE="false"
