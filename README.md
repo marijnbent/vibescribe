@@ -50,6 +50,7 @@ swift test
 2. Open the main window and paste your Deepgram API key.
 3. Hold the Option hotkey to listen while pressed (push-to-talk).
 4. Tap the Option hotkey to toggle listening on/off.
+5. The app restores your previous clipboard contents after pasting the transcript.
 
 ## Permissions
 - Microphone access is required.
