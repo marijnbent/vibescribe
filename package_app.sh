@@ -2,7 +2,7 @@
 set -euo pipefail
 
 CONF=${1:-release}
-ROOT=$(cd "$(dirname "$0")/.." && pwd)
+ROOT=$(cd "$(dirname "$0")" && pwd)
 cd "$ROOT"
 
 if [[ -f "$ROOT/version.env" ]]; then
