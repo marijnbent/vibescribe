@@ -83,7 +83,7 @@ extension AppState {
         accessibilityPermission = AXIsProcessTrusted() ? .authorized : .denied
     }
 
-    func requestMicrophonePermission(completion: (() -> Void)? = nil) {
+    func requestMicrophonePermission(completion: (@Sendable () -> Void)? = nil) {
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshPermissions()

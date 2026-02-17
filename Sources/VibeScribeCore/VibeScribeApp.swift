@@ -202,17 +202,19 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             return
         }
 
-        if !AXIsProcessTrusted() {
-            appState.addLog("Accessibility permission not granted. Enable it to allow paste automation.", level: .warning)
-        }
-
         let pasteboard = NSPasteboard.general
+        let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
         appState.addLog("Transcript copied to clipboard.", level: .info)
 
+        if !AXIsProcessTrusted() {
+            appState.addLog("Accessibility permission not granted. Enable it to allow paste automation.", level: .warning)
+        }
+
         guard let source = CGEventSource(stateID: .combinedSessionState) else {
             appState.addLog("Failed to create CGEventSource for paste.", level: .error)
+            snapshot.restore(to: pasteboard)
             return
         }
 
@@ -225,5 +227,38 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         keyUp?.post(tap: .cghidEventTap)
 
         appState.addLog("Paste command sent (Cmd+V).", level: .info)
+
+        DispatchQueue.main.async {
+            snapshot.restore(to: pasteboard)
+        }
+    }
+}
+
+private struct PasteboardSnapshot {
+    private let items: [[NSPasteboard.PasteboardType: Data]]
+
+    init(pasteboard: NSPasteboard) {
+        items = pasteboard.pasteboardItems?.map { item in
+            var dataByType: [NSPasteboard.PasteboardType: Data] = [:]
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    dataByType[type] = data
+                }
+            }
+            return dataByType
+        } ?? []
+    }
+
+    func restore(to pasteboard: NSPasteboard) {
+        pasteboard.clearContents()
+        guard !items.isEmpty else { return }
+        let restoredItems = items.map { dataByType -> NSPasteboardItem in
+            let item = NSPasteboardItem()
+            for (type, data) in dataByType {
+                item.setData(data, forType: type)
+            }
+            return item
+        }
+        pasteboard.writeObjects(restoredItems)
     }
 }
