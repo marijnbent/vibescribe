@@ -6,7 +6,7 @@ A blazing fast transcription app with smart formatting, powered by Deepgram.
 
 ## What this gives you
 - Menu bar status item (Settings + Quit)
-- Minimal settings window (API key)
+- Minimal settings window (API key + language)
 - Push-to-talk hotkey (hold to record)
 - Listening overlay
 - WebSocket streaming to Deepgram
@@ -42,7 +42,11 @@ swift build
 
 ## Test
 ```bash
-swift test
+bash scripts/test.sh
+```
+Requires `xcbeautify`:
+```bash
+brew install xcbeautify
 ```
 
 ## Usage
@@ -59,13 +63,13 @@ swift test
 ## Customization
 - Hotkey: `Sources/VibeScribeCore/HotkeyListener.swift`
 - Overlay UI: `Sources/VibeScribeCore/UI/OverlayView.swift`
-- Deepgram model (Nova 3 + `language=multi`): `Sources/VibeScribeCore/DeepgramClient.swift`
+- Deepgram model/language options: `Sources/VibeScribeCore/DeepgramClient.swift` and `Sources/VibeScribeCore/DeepgramLanguage.swift`
 
 ## Contributing
 Issues and PRs are welcome.
 1. Open an issue describing the change or bug.
 2. Keep changes focused and avoid adding backward-compatibility logic unless needed.
-3. If you add tests, include updates in the same PR and run `swift test`.
+3. If you add tests, include updates in the same PR and run `bash scripts/test.sh`.
 
 ## License
 MIT license. In short, you can use, modify, and distribute the code (including commercially) as long as you keep the copyright notice and license text, and there is no warranty. See `LICENSE`.

@@ -122,7 +122,12 @@ struct MainView: View {
             GroupBox("Deepgram") {
                 VStack(alignment: .leading, spacing: 12) {
                     TextField("API Key", text: $appState.apiKey)
-                    Text("Using Deepgram Nova 3 with multilingual code-switching (language=multi).")
+                    Picker("Language", selection: $appState.deepgramLanguage) {
+                        ForEach(DeepgramLanguage.allCases) { language in
+                            Text(language.displayName).tag(language)
+                        }
+                    }
+                    Text("Automatic uses Deepgram multilingual mode (language=multi).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

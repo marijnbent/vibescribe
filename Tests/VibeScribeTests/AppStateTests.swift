@@ -4,14 +4,17 @@ import XCTest
 @MainActor
 final class AppStateTests: XCTestCase {
     private let apiKeyDefaultsKey = "VibeScribe.ApiKey"
+    private let languageDefaultsKey = "VibeScribe.DeepgramLanguage"
 
     override func setUp() {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: apiKeyDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: languageDefaultsKey)
     }
 
     override func tearDown() {
         UserDefaults.standard.removeObject(forKey: apiKeyDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: languageDefaultsKey)
         super.tearDown()
     }
 
@@ -53,5 +56,18 @@ final class AppStateTests: XCTestCase {
         state.resetTranscript()
         XCTAssertEqual(state.lastTranscript, "")
         XCTAssertEqual(state.finalTranscript, "")
+    }
+
+    func testDeepgramLanguageDefaultsToAutomatic() {
+        let state = AppState()
+        XCTAssertEqual(state.deepgramLanguage, .automatic)
+    }
+
+    func testDeepgramLanguagePersists() {
+        let state = AppState()
+        state.deepgramLanguage = .french
+
+        let restored = AppState()
+        XCTAssertEqual(restored.deepgramLanguage, .french)
     }
 }

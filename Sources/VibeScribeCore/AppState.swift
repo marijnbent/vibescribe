@@ -6,6 +6,7 @@ import Foundation
 @MainActor
 final class AppState: ObservableObject {
     private static let apiKeyKey = "VibeScribe.ApiKey"
+    private static let deepgramLanguageKey = "VibeScribe.DeepgramLanguage"
 
     @Published var isRecording = false
     @Published var statusMessage = "Idle"
@@ -23,9 +24,16 @@ final class AppState: ObservableObject {
     }
 
     @Published var hotkey = Hotkey.pushToTalkDefault
+    @Published var deepgramLanguage: DeepgramLanguage {
+        didSet {
+            UserDefaults.standard.set(deepgramLanguage.rawValue, forKey: Self.deepgramLanguageKey)
+        }
+    }
 
     init() {
         apiKey = UserDefaults.standard.string(forKey: Self.apiKeyKey) ?? ""
+        let savedLanguage = UserDefaults.standard.string(forKey: Self.deepgramLanguageKey)
+        deepgramLanguage = savedLanguage.flatMap(DeepgramLanguage.init(rawValue:)) ?? .automatic
         refreshPermissions()
     }
 

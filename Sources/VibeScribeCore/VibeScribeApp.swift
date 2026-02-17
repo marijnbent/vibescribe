@@ -104,7 +104,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             appState.resetTranscript()
             let format = try audioCapture.start()
             appState.addLog("Audio capture started (\(format.sampleRate) Hz, \(format.channels) ch).", level: .info)
-            deepgramClient.connect(apiKey: apiKey, format: format)
+            deepgramClient.connect(apiKey: apiKey, format: format, language: appState.deepgramLanguage)
 
             audioCapture.onBuffer = { [weak self] buffer in
                 self?.deepgramClient.sendAudio(buffer: buffer)
@@ -113,6 +113,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             appState.isRecording = true
             appState.statusMessage = "Listening..."
             overlayWindowController.show()
+            appState.addLog("Language: \(appState.deepgramLanguage.displayName) (\(appState.deepgramLanguage.deepgramCode)).", level: .info)
             appState.addLog("Listening started.", level: .info)
         } catch {
             isLatchedRecording = false

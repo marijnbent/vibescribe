@@ -27,7 +27,8 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
 
     func connect(
         apiKey: String,
-        format: AudioStreamFormat
+        format: AudioStreamFormat,
+        language: DeepgramLanguage
     ) {
         disconnect()
 
@@ -41,7 +42,7 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
             URLQueryItem(name: "sample_rate", value: String(format.sampleRate)),
             URLQueryItem(name: "channels", value: String(format.channels)),
             URLQueryItem(name: "model", value: "nova-3"),
-            URLQueryItem(name: "language", value: "multi"),
+            URLQueryItem(name: "language", value: language.deepgramCode),
             URLQueryItem(name: "interim_results", value: "true"),
             URLQueryItem(name: "endpointing", value: "100"),
             URLQueryItem(name: "smart_format", value: "true"),
