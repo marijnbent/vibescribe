@@ -20,6 +20,11 @@ final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private var hotkeyListener: HotkeyListener!
     private var audioCapture: AudioCaptureController!
     private var deepgramClient: DeepgramClient!
+    private var stopWorkItem: DispatchWorkItem?
+    private var hotkeyPressedAt: TimeInterval?
+    private var isLatchedRecording = false
+    private let hotkeyTapThreshold: TimeInterval = 0.25
+    private let stopDelay: TimeInterval = 0.2
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -45,10 +50,10 @@ final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
         hotkeyListener = HotkeyListener(hotkey: appState.hotkey)
         hotkeyListener.onKeyDown = { [weak self] in
-            self?.startRecording()
+            self?.handleHotkeyDown()
         }
         hotkeyListener.onKeyUp = { [weak self] in
-            self?.stopRecording()
+            self?.handleHotkeyUp()
         }
         hotkeyListener.start()
 
@@ -110,6 +115,7 @@ final class VibeScribeApp: NSObject, NSApplicationDelegate {
             overlayWindowController.show()
             appState.addLog("Listening started.", level: .info)
         } catch {
+            isLatchedRecording = false
             appState.statusMessage = "Failed to start audio capture: \(error.localizedDescription)"
             appState.addLog("Failed to start audio capture: \(error.localizedDescription)", level: .error)
         }
@@ -118,6 +124,8 @@ final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private func stopRecording() {
         guard appState.isRecording else { return }
 
+        cancelPendingStop()
+        isLatchedRecording = false
         audioCapture.stop()
         appState.isRecording = false
         overlayWindowController.hide()
@@ -131,6 +139,59 @@ final class VibeScribeApp: NSObject, NSApplicationDelegate {
                 self.pasteFinalTranscript()
             }
         }
+    }
+
+    private func scheduleStopRecording() {
+        cancelPendingStop()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.stopRecording()
+        }
+        stopWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + stopDelay, execute: workItem)
+    }
+
+    private func cancelPendingStop() {
+        stopWorkItem?.cancel()
+        stopWorkItem = nil
+    }
+
+    private func handleHotkeyDown() {
+        hotkeyPressedAt = CACurrentMediaTime()
+        if isLatchedRecording {
+            return
+        }
+        cancelPendingStop()
+        startRecording()
+    }
+
+    private func handleHotkeyUp() {
+        let now = CACurrentMediaTime()
+        let pressedAt = hotkeyPressedAt
+        hotkeyPressedAt = nil
+
+        let duration = pressedAt.map { now - $0 } ?? 0
+        let isTap = duration <= hotkeyTapThreshold
+
+        if isTap {
+            if isLatchedRecording {
+                isLatchedRecording = false
+                scheduleStopRecording()
+            } else {
+                if !appState.isRecording {
+                    startRecording()
+                }
+                if appState.isRecording {
+                    isLatchedRecording = true
+                    cancelPendingStop()
+                }
+            }
+            return
+        }
+
+        if isLatchedRecording {
+            return
+        }
+        scheduleStopRecording()
     }
 
     private func pasteFinalTranscript() {

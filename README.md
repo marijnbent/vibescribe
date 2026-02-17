@@ -17,6 +17,18 @@ A blazing fast transcription app with smart formatting, powered by Deepgram.
 - macOS 13+
 - Xcode or the Swift toolchain that ships with your current macOS
 
+## Install
+Package a `.app` bundle for permanent install:
+```bash
+bash Scripts/package_app.sh
+```
+This creates `VibeScribe.app` in the repo root. Move it to `/Applications`, launch it once, then add it to Login Items to run at login (System Settings > General > Login Items).
+
+To customize the bundle name, id, or version, edit `version.env`.
+
+## Deepgram API Key
+Sign up for a free Deepgram API key at https://console.deepgram.com (new accounts typically include ~$200 in free credit).
+
 ## Run
 From source (development):
 ```bash
@@ -33,21 +45,11 @@ swift build
 swift test
 ```
 
-## Install
-Package a `.app` bundle for permanent install:
-```bash
-bash Scripts/package_app.sh
-```
-This creates `VibeScribe.app` in the repo root. Move it to `/Applications`, launch it once, then add it to Login Items to run at login (System Settings > General > Login Items).
-
-To customize the bundle name, id, or version, edit `version.env`.
-
 ## Usage
-Sign up for a free Deepgram API key at https://console.deepgram.com (new accounts typically include ~$200 in free credit).
-
 1. Launch the app (it appears in the menu bar).
 2. Open the main window and paste your Deepgram API key.
-3. Hold the push-to-talk hotkey to start streaming.
+3. Hold the Option hotkey to listen while pressed (push-to-talk).
+4. Tap the Option hotkey to toggle listening on/off.
 
 ## Permissions
 - Microphone access is required.
