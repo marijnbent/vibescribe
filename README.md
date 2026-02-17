@@ -20,7 +20,7 @@ A blazing fast transcription app with smart formatting, powered by Deepgram.
 ## Install
 Package a `.app` bundle for permanent install:
 ```bash
-bash Scripts/package_app.sh
+bash package_app.sh
 ```
 This creates `VibeScribe.app` in the repo root. Move it to `/Applications`, launch it once, then add it to Login Items to run at login (System Settings > General > Login Items).
 
