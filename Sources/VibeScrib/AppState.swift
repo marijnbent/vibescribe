@@ -1,3 +1,5 @@
+import ApplicationServices
+import AVFoundation
 import Combine
 import Foundation
 
@@ -11,6 +13,8 @@ final class AppState: ObservableObject {
     @Published var finalTranscript = ""
     @Published var logs: [LogEntry] = []
     @Published var overlayPulseID = UUID()
+    @Published var microphonePermission: PermissionStatus = .notDetermined
+    @Published var accessibilityPermission: PermissionStatus = .notDetermined
 
     @Published var apiKey: String {
         didSet {
@@ -22,6 +26,7 @@ final class AppState: ObservableObject {
 
     init() {
         apiKey = UserDefaults.standard.string(forKey: Self.apiKeyKey) ?? ""
+        refreshPermissions()
     }
 
     func resetTranscript() {
@@ -50,4 +55,45 @@ final class AppState: ObservableObject {
     }
 
     private var transcriptSegments: [String] = []
+}
+
+enum PermissionStatus: String {
+    case notDetermined = "Not requested"
+    case denied = "Not granted"
+    case authorized = "Granted"
+
+    var isGranted: Bool {
+        self == .authorized
+    }
+}
+
+extension AppState {
+    func refreshPermissions() {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            microphonePermission = .authorized
+        case .denied, .restricted:
+            microphonePermission = .denied
+        case .notDetermined:
+            microphonePermission = .notDetermined
+        @unknown default:
+            microphonePermission = .denied
+        }
+
+        accessibilityPermission = AXIsProcessTrusted() ? .authorized : .denied
+    }
+
+    func requestMicrophonePermission() {
+        AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshPermissions()
+            }
+        }
+    }
+
+    func requestAccessibilityPermission() {
+        let promptKey = "AXTrustedCheckOptionPrompt" as CFString
+        _ = AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
+        refreshPermissions()
+    }
 }

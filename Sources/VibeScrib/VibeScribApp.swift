@@ -40,10 +40,7 @@ final class VibeScribApp: NSObject, NSApplicationDelegate {
             }
         )
 
-        mainWindowController = MainWindowController(
-            appState: appState,
-            onToggleRecording: { [weak self] in self?.toggleRecording() }
-        )
+        mainWindowController = MainWindowController(appState: appState)
         overlayWindowController = OverlayWindowController(appState: appState)
 
         hotkeyListener = HotkeyListener(hotkey: appState.hotkey)
@@ -56,9 +53,7 @@ final class VibeScribApp: NSObject, NSApplicationDelegate {
         hotkeyListener.start()
 
         menuBarController = MenuBarController(
-            appState: appState,
             onOpenMain: { [weak self] in self?.openMainWindow() },
-            onToggleRecording: { [weak self] in self?.toggleRecording() },
             onQuit: { NSApp.terminate(nil) }
         )
 
@@ -67,10 +62,6 @@ final class VibeScribApp: NSObject, NSApplicationDelegate {
 
     private func openMainWindow() {
         mainWindowController.show()
-    }
-
-    private func toggleRecording() {
-        appState.isRecording ? stopRecording() : startRecording()
     }
 
     private func startRecording() {
@@ -95,9 +86,9 @@ final class VibeScribApp: NSObject, NSApplicationDelegate {
             }
 
             appState.isRecording = true
-            appState.statusMessage = "Recording..."
+            appState.statusMessage = "Listening..."
             overlayWindowController.show()
-            appState.addLog("Recording started.", level: .info)
+            appState.addLog("Listening started.", level: .info)
         } catch {
             appState.statusMessage = "Failed to start audio capture: \(error.localizedDescription)"
             appState.addLog("Failed to start audio capture: \(error.localizedDescription)", level: .error)
@@ -116,7 +107,7 @@ final class VibeScribApp: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 guard let self else { return }
                 self.appState.statusMessage = "Idle"
-                self.appState.addLog("Recording stopped.", level: .info)
+                self.appState.addLog("Listening stopped.", level: .info)
                 self.pasteFinalTranscript()
             }
         }

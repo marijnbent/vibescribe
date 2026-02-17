@@ -13,7 +13,7 @@ struct OverlayView: View {
             Spacer(minLength: 0)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Recording")
+                Text("Listening")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white)
             }

@@ -4,17 +4,15 @@ import SwiftUI
 @MainActor
 final class MainWindowController {
     private let appState: AppState
-    private let onToggleRecording: () -> Void
     private var window: NSWindow?
 
-    init(appState: AppState, onToggleRecording: @escaping () -> Void) {
+    init(appState: AppState) {
         self.appState = appState
-        self.onToggleRecording = onToggleRecording
     }
 
     func show() {
         if window == nil {
-            let rootView = MainView(appState: appState, onToggleRecording: onToggleRecording)
+            let rootView = MainView(appState: appState)
             let hosting = NSHostingController(rootView: rootView)
 
             let window = NSWindow(

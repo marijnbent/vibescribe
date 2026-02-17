@@ -1,8 +1,8 @@
+import AppKit
 import SwiftUI
 
 struct MainView: View {
     @ObservedObject var appState: AppState
-    let onToggleRecording: () -> Void
 
     var body: some View {
         TabView {
@@ -18,11 +18,14 @@ struct MainView: View {
     private var homeTab: some View {
         VStack(alignment: .leading, spacing: 20) {
             header
-            statusSection
+            permissionsSection
             Divider()
             settingsSection
             transcriptSection
             Spacer()
+        }
+        .onAppear {
+            appState.refreshPermissions()
         }
     }
 
@@ -45,9 +48,20 @@ struct MainView: View {
                     LazyVStack(alignment: .leading, spacing: 8) {
                         ForEach(appState.logs) { entry in
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("\(Self.formatter.string(from: entry.timestamp)) \(entry.level.rawValue)")
+                                HStack(alignment: .firstTextBaseline) {
+                                    Text("\(Self.formatter.string(from: entry.timestamp)) \(entry.level.rawValue)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Button {
+                                        copyLogEntry(entry)
+                                    } label: {
+                                        Image(systemName: "doc.on.doc")
+                                    }
+                                    .buttonStyle(.borderless)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .help("Copy log entry")
+                                }
                                 Text(entry.message)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -69,20 +83,24 @@ struct MainView: View {
         }
     }
 
-    private var statusSection: some View {
-        HStack(spacing: 16) {
-            RecordingBadge(isRecording: appState.isRecording)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Status")
-                    .font(.headline)
-                Text(appState.statusMessage)
-                    .foregroundStyle(.secondary)
+    private var permissionsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Permissions")
+                .font(.headline)
+            PermissionRow(
+                title: "Recording",
+                status: appState.microphonePermission,
+                actionTitle: "Request"
+            ) {
+                appState.requestMicrophonePermission()
             }
-            Spacer()
-            Button(appState.isRecording ? "Stop Recording" : "Start Recording") {
-                onToggleRecording()
+            PermissionRow(
+                title: "Pasting",
+                status: appState.accessibilityPermission,
+                actionTitle: "Request"
+            ) {
+                appState.requestAccessibilityPermission()
             }
-            .keyboardShortcut(.defaultAction)
         }
     }
 
@@ -133,21 +151,35 @@ struct MainView: View {
         }
         return "Waiting for transcription..."
     }
+
+    private func copyLogEntry(_ entry: LogEntry) {
+        let text = "\(Self.formatter.string(from: entry.timestamp)) \(entry.level.rawValue) \(entry.message)"
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
 }
 
-private struct RecordingBadge: View {
-    let isRecording: Bool
+private struct PermissionRow: View {
+    let title: String
+    let status: PermissionStatus
+    let actionTitle: String
+    let action: () -> Void
 
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(isRecording ? Color.red.opacity(0.2) : Color.gray.opacity(0.2))
-                .frame(width: 56, height: 56)
-            Circle()
-                .fill(isRecording ? Color.red : Color.gray)
-                .frame(width: 16, height: 16)
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                Text(status.rawValue)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(actionTitle) {
+                action()
+            }
         }
-        .accessibilityLabel(isRecording ? "Recording" : "Not recording")
     }
 }
 
