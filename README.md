@@ -3,10 +3,10 @@
 A tiny macOS menu bar app for push-to-talk transcription with Deepgram.
 
 ## What this gives you
-- Menu bar status item with start/stop
+- Menu bar status item (Settings + Quit)
 - Minimal settings window (API key)
 - Push-to-talk hotkey (hold to record)
-- Recording overlay
+- Listening overlay
 - WebSocket streaming to Deepgram
 - Logs tab for connection/debugging
 - Auto-paste transcript on release (requires Accessibility permission)
@@ -15,12 +15,23 @@ A tiny macOS menu bar app for push-to-talk transcription with Deepgram.
 - macOS 13+
 - Xcode or the Swift toolchain that ships with your current macOS
 
-## Install
-Run from source (development):
+## Run
+From source (development):
 ```bash
 swift run
 ```
 
+## Build
+```bash
+swift build
+```
+
+## Test
+```bash
+swift test
+```
+
+## Install
 Package a `.app` bundle for permanent install:
 ```bash
 bash Scripts/package_app.sh

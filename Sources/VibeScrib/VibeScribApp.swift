@@ -20,6 +20,7 @@ final class VibeScribApp: NSObject, NSApplicationDelegate {
     private var hotkeyListener: HotkeyListener!
     private var audioCapture: AudioCaptureController!
     private var deepgramClient: DeepgramClient!
+    private var appActiveObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -57,7 +58,22 @@ final class VibeScribApp: NSObject, NSApplicationDelegate {
             onQuit: { NSApp.terminate(nil) }
         )
 
+        appActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.appState.refreshPermissions()
+        }
+
+        appState.requestInitialPermissionsIfNeeded()
         appState.addLog("VibeScrib launched.", level: .info)
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if let appActiveObserver {
+            NotificationCenter.default.removeObserver(appActiveObserver)
+        }
     }
 
     private func openMainWindow() {
