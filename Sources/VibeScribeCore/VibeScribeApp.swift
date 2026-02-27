@@ -32,6 +32,9 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
         appState = AppState()
         audioCapture = AudioCaptureController()
+        audioCapture.onConfigurationChanged = { [weak self] in
+            self?.handleAudioInputConfigurationChanged()
+        }
         deepgramClient = DeepgramClient(
             onTranscriptEvent: { [weak self] text, isFinal in
                 Task { @MainActor in
@@ -87,6 +90,22 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
     private func openMainWindow() {
         mainWindowController.show()
+    }
+
+    private func handleAudioInputConfigurationChanged() {
+        appState.addLog("Audio input changed. Capture engine reset.", level: .warning)
+        guard appState.isRecording else {
+            appState.statusMessage = "Audio input changed. Ready."
+            return
+        }
+
+        cancelPendingStop()
+        isLatchedRecording = false
+        deepgramClient.disconnect()
+        appState.isRecording = false
+        overlayWindowController.hide()
+        appState.statusMessage = "Input changed. Press and hold Option to resume."
+        appState.addLog("Recording stopped because the input device changed.", level: .warning)
     }
 
     private func startRecording() {

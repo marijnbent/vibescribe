@@ -7,6 +7,7 @@ import Foundation
 final class AppState: ObservableObject {
     private static let apiKeyKey = "VibeScribe.ApiKey"
     private static let deepgramLanguageKey = "VibeScribe.DeepgramLanguage"
+    private static let accessibilityPromptDelayNanoseconds: UInt64 = 500_000_000
 
     @Published var isRecording = false
     @Published var statusMessage = "Idle"
@@ -101,9 +102,13 @@ extension AppState {
     }
 
     func requestAccessibilityPermission() {
-        let promptKey = "AXTrustedCheckOptionPrompt" as CFString
-        _ = AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
-        refreshPermissions()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(nanoseconds: Self.accessibilityPromptDelayNanoseconds)
+            let promptKey = "AXTrustedCheckOptionPrompt" as CFString
+            _ = AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
+            self.refreshPermissions()
+        }
     }
 
     func requestInitialPermissionsIfNeeded() {

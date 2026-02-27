@@ -1,15 +1,26 @@
 import AVFoundation
+import Foundation
 
 struct AudioStreamFormat {
     let sampleRate: Int
     let channels: Int
 }
 
-final class AudioCaptureController {
-    private let engine = AVAudioEngine()
+final class AudioCaptureController: NSObject {
+    private var engine = AVAudioEngine()
     private var isRunning = false
 
     var onBuffer: ((AVAudioPCMBuffer) -> Void)?
+    var onConfigurationChanged: (() -> Void)?
+
+    override init() {
+        super.init()
+        installConfigurationObserver()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
 
     func start() throws -> AudioStreamFormat {
         guard !isRunning else {
@@ -19,6 +30,7 @@ final class AudioCaptureController {
             return AudioStreamFormat(sampleRate: 16000, channels: 1)
         }
 
+        resetEngine()
         let inputNode = engine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
 
@@ -27,7 +39,13 @@ final class AudioCaptureController {
         }
 
         engine.prepare()
-        try engine.start()
+        do {
+            try engine.start()
+        } catch {
+            stopEngine()
+            resetEngine()
+            throw error
+        }
         isRunning = true
 
         return AudioStreamFormat(sampleRate: Int(format.sampleRate), channels: Int(format.channelCount))
@@ -35,14 +53,52 @@ final class AudioCaptureController {
 
     func stop() {
         guard isRunning else { return }
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        isRunning = false
+        stopEngine()
     }
 
     private func currentFormat() -> AudioStreamFormat? {
         let format = engine.inputNode.outputFormat(forBus: 0)
         guard format.sampleRate > 0 else { return nil }
         return AudioStreamFormat(sampleRate: Int(format.sampleRate), channels: Int(format.channelCount))
+    }
+
+    private func stopEngine() {
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        isRunning = false
+    }
+
+    private func resetEngine() {
+        removeConfigurationObserver()
+        engine = AVAudioEngine()
+        installConfigurationObserver()
+    }
+
+    private func installConfigurationObserver() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleConfigurationChangeNotification(_:)),
+            name: .AVAudioEngineConfigurationChange,
+            object: engine
+        )
+    }
+
+    private func removeConfigurationObserver() {
+        NotificationCenter.default.removeObserver(
+            self,
+            name: .AVAudioEngineConfigurationChange,
+            object: engine
+        )
+    }
+
+    @objc private func handleConfigurationChangeNotification(_ notification: Notification) {
+        handleConfigurationChange()
+    }
+
+    private func handleConfigurationChange() {
+        guard isRunning else { return }
+        stopEngine()
+        resetEngine()
+        onConfigurationChanged?()
     }
 }

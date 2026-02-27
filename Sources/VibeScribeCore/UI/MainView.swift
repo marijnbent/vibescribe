@@ -12,7 +12,7 @@ struct MainView: View {
                 .tabItem { Text("Logs") }
         }
         .padding(24)
-        .frame(minWidth: 520, minHeight: 420)
+        .frame(minWidth: 560, minHeight: 560)
     }
 
     private var homeTab: some View {
