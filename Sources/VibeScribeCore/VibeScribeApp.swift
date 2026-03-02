@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import Carbon
+import Combine
 import SwiftUI
 
 @MainActor
@@ -16,13 +17,15 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private var menuBarController: MenuBarController!
     private var mainWindowController: MainWindowController!
     private var overlayWindowController: OverlayWindowController!
-    private var hotkeyListener: HotkeyListener!
+    private var hotkeyListeners: [UUID: HotkeyListener] = [:]
     private var audioCapture: AudioCaptureController!
     private var deepgramClient: DeepgramClient!
     private var stopWorkItem: DispatchWorkItem?
-    private var hotkeyPressedAt: TimeInterval?
     private var isLatchedRecording = false
-    private let hotkeyTapThreshold: TimeInterval = 0.25
+    private var activeShortcutID: UUID?
+    private var shortcutLastKeyDown: [UUID: TimeInterval] = [:]
+    private var cancellables = Set<AnyCancellable>()
+    private let doubleClickThreshold: TimeInterval = 0.3
     private let stopDelay: TimeInterval = 0.2
     private let clipboardRestoreDelay: TimeInterval = 0.2
 
@@ -51,14 +54,14 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         mainWindowController = MainWindowController(appState: appState)
         overlayWindowController = OverlayWindowController(appState: appState)
 
-        hotkeyListener = HotkeyListener(hotkey: appState.hotkey)
-        hotkeyListener.onKeyDown = { [weak self] in
-            self?.handleHotkeyDown()
-        }
-        hotkeyListener.onKeyUp = { [weak self] in
-            self?.handleHotkeyUp()
-        }
-        hotkeyListener.start()
+        rebuildHotkeyListeners()
+        appState.$shortcuts
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.rebuildHotkeyListeners()
+            }
+            .store(in: &cancellables)
 
         menuBarController = MenuBarController(
             onOpenMain: { [weak self] in self?.openMainWindow() },
@@ -92,6 +95,131 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         mainWindowController.show()
     }
 
+    // MARK: - Hotkey Listener Management
+
+    private func rebuildHotkeyListeners() {
+        for listener in hotkeyListeners.values {
+            listener.stop()
+        }
+        hotkeyListeners.removeAll()
+        shortcutLastKeyDown.removeAll()
+
+        for shortcut in appState.shortcuts {
+            let hotkey = Hotkey(shortcutKey: shortcut.key)
+            let listener = HotkeyListener(hotkey: hotkey)
+            let id = shortcut.id
+            let mode = shortcut.mode
+
+            listener.onKeyDown = { [weak self] in
+                self?.handleKeyDown(shortcutID: id, mode: mode)
+            }
+            listener.onKeyUp = { [weak self] in
+                self?.handleKeyUp(shortcutID: id, mode: mode)
+            }
+            listener.start()
+            hotkeyListeners[id] = listener
+        }
+    }
+
+    // MARK: - Mode-Based Key Handling
+
+    private func handleKeyDown(shortcutID: UUID, mode: ShortcutMode) {
+        let now = CACurrentMediaTime()
+
+        switch mode {
+        case .hold:
+            handleHoldKeyDown(shortcutID: shortcutID)
+        case .doubleClick:
+            handleDoubleClickKeyDown(shortcutID: shortcutID, now: now)
+        case .both:
+            handleBothKeyDown(shortcutID: shortcutID, now: now)
+        }
+    }
+
+    private func handleKeyUp(shortcutID: UUID, mode: ShortcutMode) {
+        switch mode {
+        case .hold:
+            handleHoldKeyUp(shortcutID: shortcutID)
+        case .doubleClick:
+            break // Double click mode does not use key up
+        case .both:
+            handleBothKeyUp(shortcutID: shortcutID)
+        }
+    }
+
+    // MARK: Hold Mode
+
+    private func handleHoldKeyDown(shortcutID: UUID) {
+        guard !appState.isRecording else { return }
+        activeShortcutID = shortcutID
+        startRecording()
+    }
+
+    private func handleHoldKeyUp(shortcutID: UUID) {
+        guard activeShortcutID == shortcutID else { return }
+        scheduleStopRecording()
+    }
+
+    // MARK: Double Click Mode
+
+    private func handleDoubleClickKeyDown(shortcutID: UUID, now: TimeInterval) {
+        if isLatchedRecording && activeShortcutID == shortcutID {
+            // Single press while latched → stop
+            isLatchedRecording = false
+            stopRecording()
+            return
+        }
+
+        let lastDown = shortcutLastKeyDown[shortcutID]
+        shortcutLastKeyDown[shortcutID] = now
+
+        if let lastDown, (now - lastDown) <= doubleClickThreshold {
+            // Double click detected → start + latch
+            activeShortcutID = shortcutID
+            isLatchedRecording = true
+            shortcutLastKeyDown[shortcutID] = nil
+            startRecording()
+        }
+    }
+
+    // MARK: Both Mode (Hold + Double Click)
+
+    private func handleBothKeyDown(shortcutID: UUID, now: TimeInterval) {
+        if isLatchedRecording && activeShortcutID == shortcutID {
+            // Tap while latched → stop
+            isLatchedRecording = false
+            stopRecording()
+            return
+        }
+
+        let lastDown = shortcutLastKeyDown[shortcutID]
+        shortcutLastKeyDown[shortcutID] = now
+
+        if appState.isRecording && activeShortcutID == shortcutID {
+            // Already recording (hold in progress) — check for double click to latch
+            if let lastDown, (now - lastDown) <= doubleClickThreshold {
+                cancelPendingStop()
+                isLatchedRecording = true
+                shortcutLastKeyDown[shortcutID] = nil
+            }
+            return
+        }
+
+        // Start recording (for hold)
+        activeShortcutID = shortcutID
+        cancelPendingStop()
+        startRecording()
+    }
+
+    private func handleBothKeyUp(shortcutID: UUID) {
+        guard activeShortcutID == shortcutID else { return }
+        if isLatchedRecording { return }
+        guard appState.isRecording else { return }
+        scheduleStopRecording()
+    }
+
+    // MARK: - Audio Input Change
+
     private func handleAudioInputConfigurationChanged() {
         appState.addLog("Audio input changed. Capture engine reset.", level: .warning)
         guard appState.isRecording else {
@@ -101,12 +229,15 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
         cancelPendingStop()
         isLatchedRecording = false
+        activeShortcutID = nil
         deepgramClient.disconnect()
         appState.isRecording = false
         overlayWindowController.hide()
-        appState.statusMessage = "Input changed. Press and hold Option to resume."
+        appState.statusMessage = "Input changed. Ready."
         appState.addLog("Recording stopped because the input device changed.", level: .warning)
     }
+
+    // MARK: - Recording
 
     private func startRecording() {
         guard !appState.isRecording else { return }
@@ -136,6 +267,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             appState.addLog("Listening started.", level: .info)
         } catch {
             isLatchedRecording = false
+            activeShortcutID = nil
             appState.statusMessage = "Failed to start audio capture: \(error.localizedDescription)"
             appState.addLog("Failed to start audio capture: \(error.localizedDescription)", level: .error)
         }
@@ -151,12 +283,15 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         overlayWindowController.hide()
         appState.statusMessage = "Finalizing..."
 
+        let shortcutID = activeShortcutID
+
         deepgramClient.closeStream { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
                 self.appState.statusMessage = "Idle"
                 self.appState.addLog("Listening stopped.", level: .info)
-                self.pasteFinalTranscript()
+                await self.pasteFinalTranscript(shortcutID: shortcutID)
+                self.activeShortcutID = nil
             }
         }
     }
@@ -175,52 +310,38 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         stopWorkItem = nil
     }
 
-    private func handleHotkeyDown() {
-        hotkeyPressedAt = CACurrentMediaTime()
-        if isLatchedRecording {
-            return
-        }
-        cancelPendingStop()
-        startRecording()
-    }
+    // MARK: - Paste with Enhancement
 
-    private func handleHotkeyUp() {
-        let now = CACurrentMediaTime()
-        let pressedAt = hotkeyPressedAt
-        hotkeyPressedAt = nil
-
-        let duration = pressedAt.map { now - $0 } ?? 0
-        let isTap = duration <= hotkeyTapThreshold
-
-        if isTap {
-            if isLatchedRecording {
-                isLatchedRecording = false
-                scheduleStopRecording()
-            } else {
-                if !appState.isRecording {
-                    startRecording()
-                }
-                if appState.isRecording {
-                    isLatchedRecording = true
-                    cancelPendingStop()
-                }
-            }
-            return
-        }
-
-        if isLatchedRecording {
-            return
-        }
-        scheduleStopRecording()
-    }
-
-    private func pasteFinalTranscript() {
+    private func pasteFinalTranscript(shortcutID: UUID?) async {
         let finalText = appState.finalTranscript.trimmed
         let fallbackText = appState.lastTranscript.trimmed
-        let text = finalText.isEmpty ? fallbackText : finalText
+        var text = finalText.isEmpty ? fallbackText : finalText
         guard !text.isEmpty else {
             appState.addLog("No transcript to paste.", level: .warning)
             return
+        }
+
+        // Enhancement via OpenRouter
+        if let shortcutID,
+           let prompt = appState.enhancementPrompts[shortcutID],
+           appState.hasOpenRouterCredentials {
+            appState.statusMessage = "Enhancing..."
+            appState.addLog("Sending transcript to OpenRouter for enhancement.", level: .info)
+            do {
+                let enhanced = try await OpenRouterClient.enhance(
+                    transcript: text,
+                    prompt: prompt,
+                    apiKey: appState.openRouterApiKey.trimmed,
+                    model: appState.openRouterModel.trimmed
+                )
+                let trimmedEnhanced = enhanced.trimmed
+                if !trimmedEnhanced.isEmpty {
+                    text = trimmedEnhanced
+                    appState.addLog("Transcript enhanced successfully.", level: .info)
+                }
+            } catch {
+                appState.addLog("Enhancement failed, using raw transcript: \(error.localizedDescription)", level: .warning)
+            }
         }
 
         let pasteboard = NSPasteboard.general
@@ -229,6 +350,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         pasteboard.setString(text, forType: .string)
         appState.addTranscriptToHistory(text)
         appState.addLog("Transcript copied to clipboard.", level: .info)
+        appState.statusMessage = "Idle"
 
         if !AXIsProcessTrusted() {
             appState.addLog("Accessibility permission not granted. Enable it to allow paste automation.", level: .warning)

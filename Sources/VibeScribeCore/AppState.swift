@@ -8,6 +8,10 @@ final class AppState: ObservableObject {
     private static let apiKeyKey = "VibeScribe.ApiKey"
     private static let deepgramLanguageKey = "VibeScribe.DeepgramLanguage"
     private static let historyLimitKey = "VibeScribe.HistoryLimit"
+    private static let shortcutsKey = "VibeScribe.Shortcuts"
+    private static let openRouterApiKeyKey = "VibeScribe.OpenRouterApiKey"
+    private static let openRouterModelKey = "VibeScribe.OpenRouterModel"
+    private static let enhancementPromptsKey = "VibeScribe.EnhancementPrompts"
     private static let accessibilityPromptDelayNanoseconds: UInt64 = 500_000_000
 
     @Published var isRecording = false
@@ -26,7 +30,39 @@ final class AppState: ObservableObject {
         }
     }
 
-    @Published var hotkey = Hotkey.pushToTalkDefault
+    @Published var shortcuts: [ShortcutConfig] {
+        didSet {
+            if let data = try? JSONEncoder().encode(shortcuts) {
+                UserDefaults.standard.set(data, forKey: Self.shortcutsKey)
+            }
+        }
+    }
+
+    @Published var openRouterApiKey: String {
+        didSet {
+            UserDefaults.standard.set(openRouterApiKey, forKey: Self.openRouterApiKeyKey)
+        }
+    }
+
+    @Published var openRouterModel: String {
+        didSet {
+            UserDefaults.standard.set(openRouterModel, forKey: Self.openRouterModelKey)
+        }
+    }
+
+    @Published var enhancementPrompts: [UUID: String] {
+        didSet {
+            let stringKeyed = Dictionary(uniqueKeysWithValues: enhancementPrompts.map { ($0.key.uuidString, $0.value) })
+            if let data = try? JSONEncoder().encode(stringKeyed) {
+                UserDefaults.standard.set(data, forKey: Self.enhancementPromptsKey)
+            }
+        }
+    }
+
+    var hasOpenRouterCredentials: Bool {
+        !openRouterApiKey.trimmed.isEmpty && !openRouterModel.trimmed.isEmpty
+    }
+
     @Published var deepgramLanguage: DeepgramLanguage {
         didSet {
             UserDefaults.standard.set(deepgramLanguage.rawValue, forKey: Self.deepgramLanguageKey)
@@ -46,6 +82,31 @@ final class AppState: ObservableObject {
         deepgramLanguage = savedLanguage.flatMap(DeepgramLanguage.init(rawValue:)) ?? .automatic
         let savedLimit = UserDefaults.standard.integer(forKey: Self.historyLimitKey)
         historyLimit = HistoryLimit(rawValue: savedLimit) ?? .ten
+
+        if let data = UserDefaults.standard.data(forKey: Self.shortcutsKey),
+           let decoded = try? JSONDecoder().decode([ShortcutConfig].self, from: data),
+           !decoded.isEmpty {
+            shortcuts = decoded
+        } else {
+            shortcuts = [ShortcutConfig.makeDefault()]
+        }
+
+        openRouterApiKey = UserDefaults.standard.string(forKey: Self.openRouterApiKeyKey) ?? ""
+        openRouterModel = UserDefaults.standard.string(forKey: Self.openRouterModelKey) ?? ""
+
+        if let data = UserDefaults.standard.data(forKey: Self.enhancementPromptsKey),
+           let stringKeyed = try? JSONDecoder().decode([String: String].self, from: data) {
+            var prompts: [UUID: String] = [:]
+            for (key, value) in stringKeyed {
+                if let uuid = UUID(uuidString: key) {
+                    prompts[uuid] = value
+                }
+            }
+            enhancementPrompts = prompts
+        } else {
+            enhancementPrompts = [:]
+        }
+
         refreshPermissions()
     }
 

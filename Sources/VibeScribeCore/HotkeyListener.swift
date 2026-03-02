@@ -17,6 +17,18 @@ struct Hotkey: Equatable {
         modifiers: [.option]
     )
 
+    init(trigger: HotkeyTrigger, keyCode: UInt16, modifiers: NSEvent.ModifierFlags) {
+        self.trigger = trigger
+        self.keyCode = keyCode
+        self.modifiers = modifiers
+    }
+
+    init(shortcutKey: ShortcutKey) {
+        self.trigger = .modifierOnly
+        self.keyCode = shortcutKey.keyCode
+        self.modifiers = shortcutKey.modifierFlag
+    }
+
     var displayName: String {
         switch trigger {
         case .modifierOnly:
@@ -58,6 +70,14 @@ struct Hotkey: Equatable {
             return "Right Option"
         case kVK_Option:
             return "Left Option"
+        case 0x3F:
+            return "Fn"
+        case kVK_Control:
+            return "Left Control"
+        case kVK_Command:
+            return "Left Command"
+        case kVK_RightCommand:
+            return "Right Command"
         default:
             return "KeyCode(\(keyCode))"
         }

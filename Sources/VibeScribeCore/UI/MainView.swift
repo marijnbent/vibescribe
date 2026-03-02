@@ -7,24 +7,30 @@ struct MainView: View {
     var body: some View {
         TabView {
             homeTab
-                .tabItem { Text("Home") }
+                .tabItem { Label("Home", systemImage: "house") }
+            ShortcutsSettingsView(appState: appState)
+                .tabItem { Label("Shortcuts", systemImage: "keyboard") }
+            EnhancementsSettingsView(appState: appState)
+                .tabItem { Label("Enhance", systemImage: "wand.and.stars") }
             historyTab
-                .tabItem { Text("History") }
+                .tabItem { Label("History", systemImage: "clock") }
             logsTab
-                .tabItem { Text("Logs") }
+                .tabItem { Label("Logs", systemImage: "list.bullet.rectangle") }
         }
         .padding(24)
         .frame(minWidth: 560, minHeight: 560)
     }
 
     private var homeTab: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            header
-            permissionsSection
-            Divider()
-            settingsSection
-            transcriptSection
-            Spacer()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                header
+                permissionsSection
+                Divider()
+                settingsSection
+                transcriptSection
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear {
             appState.refreshPermissions()
@@ -161,11 +167,9 @@ struct MainView: View {
         VStack(alignment: .leading, spacing: 16) {
             GroupBox("Push-to-Talk") {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Hotkey")
+                    Text("\(appState.shortcuts.count) shortcut\(appState.shortcuts.count == 1 ? "" : "s") configured")
                         .font(.subheadline)
-                    Text(appState.hotkey.displayName)
-                        .foregroundStyle(.secondary)
-                    Text("Change this in code for now (Hotkey.pushToTalkDefault).")
+                    Text("Configure keys and modes in the Shortcuts tab.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
