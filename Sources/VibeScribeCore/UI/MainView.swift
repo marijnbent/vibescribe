@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MainView: View {
     @ObservedObject var appState: AppState
+    @State private var expandedHistoryEntries: Set<UUID> = []
 
     var body: some View {
         TabView {
@@ -53,7 +54,7 @@ struct MainView: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(appState.logs) { entry in
+                        ForEach(appState.logs.reversed()) { entry in
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(alignment: .firstTextBaseline) {
                                     Text("\(Self.formatter.string(from: entry.timestamp)) \(entry.level.rawValue)")
@@ -76,6 +77,7 @@ struct MainView: View {
                             Divider()
                         }
                     }
+                    .padding(.trailing, 8)
                 }
             }
         }
@@ -103,30 +105,23 @@ struct MainView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(appState.transcriptHistory) { entry in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack(alignment: .firstTextBaseline) {
-                                    Text(Self.formatter.string(from: entry.timestamp))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    Button {
-                                        let pasteboard = NSPasteboard.general
-                                        pasteboard.clearContents()
-                                        pasteboard.setString(entry.text, forType: .string)
-                                    } label: {
-                                        Image(systemName: "doc.on.doc")
-                                    }
-                                    .buttonStyle(.borderless)
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(Self.formatter.string(from: entry.timestamp))
                                     .font(.caption)
-                                    .help("Copy full transcript")
+                                    .foregroundStyle(.secondary)
+
+                                if entry.enhancedText != nil {
+                                    historyRow(label: "Original", text: entry.text, entryID: entry.id)
+                                    historyRow(label: "Enhanced", text: entry.enhancedText!, entryID: entry.id)
+                                } else {
+                                    historyRow(label: nil, text: entry.text, entryID: entry.id)
                                 }
-                                Text(entry.displayText)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .padding(.vertical, 8)
                             Divider()
                         }
                     }
+                    .padding(.trailing, 8)
                 }
             }
         }
@@ -180,6 +175,43 @@ struct MainView: View {
                 Toggle("Play sound effects", isOn: $appState.playSoundEffects)
             }
             .textFieldStyle(.roundedBorder)
+        }
+    }
+
+    private func historyRow(label: String?, text: String, entryID: UUID) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline) {
+                if let label {
+                    Text(label)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                }
+                Spacer()
+                Button {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(text, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+                .help("Copy \(label?.lowercased() ?? "transcript")")
+            }
+            Text(text)
+                .lineLimit(expandedHistoryEntries.contains(entryID) ? nil : 5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        if expandedHistoryEntries.contains(entryID) {
+                            expandedHistoryEntries.remove(entryID)
+                        } else {
+                            expandedHistoryEntries.insert(entryID)
+                        }
+                    }
+                }
         }
     }
 

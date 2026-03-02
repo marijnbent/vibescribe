@@ -3,43 +3,48 @@ import SwiftUI
 struct EnhancementsSettingsView: View {
     @ObservedObject var appState: AppState
 
-    private static let defaultPrompt = "fix the transcription if needed. remove fillers. keep original as possible."
+    static let defaultPrompt = "Clean up this transcription. Fix spelling and grammar errors, remove filler words (um, uh, like), but keep the original meaning and tone."
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Enhancements")
-                .font(.headline)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Enhancements")
+                    .font(.headline)
 
-            GroupBox("OpenRouter") {
-                VStack(alignment: .leading, spacing: 12) {
-                    SecureField("API Key", text: $appState.openRouterApiKey)
-                    TextField("Model", text: $appState.openRouterModel)
-                    Text("Enter your OpenRouter API key and model identifier (e.g. openai/gpt-4o-mini).")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            GroupBox("Per-Shortcut Enhancement") {
-                VStack(alignment: .leading, spacing: 12) {
-                    if appState.shortcuts.isEmpty {
-                        Text("No shortcuts configured.")
+                GroupBox("OpenRouter") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        SecureField("API Key", text: $appState.openRouterApiKey)
+                        TextField("Model", text: $appState.openRouterModel)
+                        Text("Enter your OpenRouter API key and model identifier (e.g. openai/gpt-4o-mini).")
+                            .font(.caption)
                             .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(appState.shortcuts) { shortcut in
-                            shortcutEnhancementRow(shortcut)
-                            if shortcut.id != appState.shortcuts.last?.id {
-                                Divider()
+                    }
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                GroupBox("Per-Shortcut Enhancement") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("The transcription is appended to your prompt as <transcription>…</transcription>.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if appState.shortcuts.isEmpty {
+                            Text("No shortcuts configured.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(appState.shortcuts) { shortcut in
+                                shortcutEnhancementRow(shortcut)
+                                if shortcut.id != appState.shortcuts.last?.id {
+                                    Divider()
+                                }
                             }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -69,9 +74,10 @@ struct EnhancementsSettingsView: View {
                     .toggleStyle(.switch)
             }
             if isEnabled.wrappedValue {
-                TextField("Prompt", text: promptBinding)
-                    .textFieldStyle(.roundedBorder)
+                TextEditor(text: promptBinding)
                     .font(.caption)
+                    .frame(height: 60)
+                    .border(Color.secondary.opacity(0.3))
             }
         }
     }

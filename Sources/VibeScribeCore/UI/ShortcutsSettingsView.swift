@@ -49,9 +49,13 @@ struct ShortcutsSettingsView: View {
                 }
             }
 
-            Text("Each shortcut key triggers push-to-talk recording using the selected mode.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Hold — push-to-talk. Press and hold to record, release to stop.")
+                Text("Double Click — double-press to start, single press to stop.")
+                Text("Both — hold to record, or double-press to latch on and tap to stop.")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
 
             Spacer()
         }

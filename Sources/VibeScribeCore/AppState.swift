@@ -147,9 +147,9 @@ final class AppState: ObservableObject {
         logs.append(LogEntry(timestamp: Date(), level: level, message: message))
     }
 
-    func addTranscriptToHistory(_ text: String) {
+    func addTranscriptToHistory(_ text: String, enhancedText: String? = nil) {
         guard historyLimit != .none else { return }
-        let entry = TranscriptHistoryEntry(timestamp: Date(), text: text)
+        let entry = TranscriptHistoryEntry(timestamp: Date(), text: text, enhancedText: enhancedText)
         transcriptHistory.insert(entry, at: 0)
         applyHistoryLimit()
     }
@@ -174,10 +174,18 @@ struct TranscriptHistoryEntry: Identifiable {
     let id = UUID()
     let timestamp: Date
     let text: String
+    let enhancedText: String?
+
+    init(timestamp: Date, text: String, enhancedText: String? = nil) {
+        self.timestamp = timestamp
+        self.text = text
+        self.enhancedText = enhancedText
+    }
 
     var displayText: String {
-        let sentences = text.splitIntoSentences()
-        if sentences.count <= 3 { return text }
+        let source = enhancedText ?? text
+        let sentences = source.splitIntoSentences()
+        if sentences.count <= 3 { return source }
         return sentences.prefix(3).joined() + "…"
     }
 }
@@ -206,6 +214,7 @@ extension String {
         }
         return sentences
     }
+
 }
 
 enum PermissionStatus: String {

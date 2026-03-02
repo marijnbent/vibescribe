@@ -8,10 +8,11 @@ enum OpenRouterClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
+        let content = "\(prompt)\n\n<transcription>\(transcript)</transcription>"
         let body: [String: Any] = [
             "model": model,
             "messages": [
-                ["role": "user", "content": "\(prompt)\n\n\(transcript)"]
+                ["role": "user", "content": content]
             ]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)

@@ -143,6 +143,43 @@ final class HistoryTests: XCTestCase {
         XCTAssertFalse(entry.displayText.contains("Four"))
     }
 
+    // MARK: - Enhanced Text
+
+    func testAddTranscriptWithEnhancedText() {
+        let state = AppState()
+        state.addTranscriptToHistory("raw text", enhancedText: "enhanced text")
+
+        XCTAssertEqual(state.transcriptHistory.count, 1)
+        XCTAssertEqual(state.transcriptHistory[0].text, "raw text")
+        XCTAssertEqual(state.transcriptHistory[0].enhancedText, "enhanced text")
+    }
+
+    func testAddTranscriptWithoutEnhancedText() {
+        let state = AppState()
+        state.addTranscriptToHistory("raw text")
+
+        XCTAssertEqual(state.transcriptHistory.count, 1)
+        XCTAssertEqual(state.transcriptHistory[0].text, "raw text")
+        XCTAssertNil(state.transcriptHistory[0].enhancedText)
+    }
+
+    func testDisplayTextPrefersEnhancedText() {
+        let entry = TranscriptHistoryEntry(timestamp: Date(), text: "raw", enhancedText: "enhanced")
+        XCTAssertEqual(entry.displayText, "enhanced")
+    }
+
+    func testDisplayTextFallsBackToRawWhenNoEnhancement() {
+        let entry = TranscriptHistoryEntry(timestamp: Date(), text: "raw only")
+        XCTAssertEqual(entry.displayText, "raw only")
+    }
+
+    func testDisplayTextTruncatesEnhancedText() {
+        let enhanced = "One. Two. Three. Four. Five."
+        let entry = TranscriptHistoryEntry(timestamp: Date(), text: "raw", enhancedText: enhanced)
+        XCTAssertTrue(entry.displayText.hasSuffix("…"))
+        XCTAssertFalse(entry.displayText.contains("Four"))
+    }
+
     // MARK: - HistoryLimit Enum
 
     func testHistoryLimitDisplayNames() {

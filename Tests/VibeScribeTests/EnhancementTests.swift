@@ -142,4 +142,42 @@ final class EnhancementTests: XCTestCase {
         let error = OpenRouterError.noContent
         XCTAssertEqual(error.errorDescription, "OpenRouter returned no content.")
     }
+
+    // MARK: - Default Prompt
+
+    func testDefaultPromptIsNotEmpty() {
+        XCTAssertFalse(EnhancementsSettingsView.defaultPrompt.isEmpty)
+    }
+
+    func testEnablingEnhancementSetsDefaultPrompt() {
+        let state = AppState()
+        let id = state.shortcuts[0].id
+        state.enhancementPrompts[id] = EnhancementsSettingsView.defaultPrompt
+
+        XCTAssertEqual(state.enhancementPrompts[id], EnhancementsSettingsView.defaultPrompt)
+    }
+
+    // MARK: - Missing Credentials with Enhancement Enabled
+
+    func testEnhancementEnabledButMissingApiKeyLogsWarning() {
+        let state = AppState()
+        let id = state.shortcuts[0].id
+        state.enhancementPrompts[id] = "fix it"
+        state.openRouterModel = "openai/gpt-4o-mini"
+        // No API key set
+
+        XCTAssertNotNil(state.enhancementPrompts[id])
+        XCTAssertFalse(state.hasOpenRouterCredentials)
+    }
+
+    func testEnhancementEnabledButMissingModelLogsWarning() {
+        let state = AppState()
+        let id = state.shortcuts[0].id
+        state.enhancementPrompts[id] = "fix it"
+        state.openRouterApiKey = "sk-test"
+        // No model set
+
+        XCTAssertNotNil(state.enhancementPrompts[id])
+        XCTAssertFalse(state.hasOpenRouterCredentials)
+    }
 }

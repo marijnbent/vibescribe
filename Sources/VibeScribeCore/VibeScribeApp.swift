@@ -380,40 +380,48 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private func pasteFinalTranscript(shortcutID: UUID?) async {
         let finalText = appState.finalTranscript.trimmed
         let fallbackText = appState.lastTranscript.trimmed
-        var text = finalText.isEmpty ? fallbackText : finalText
-        guard !text.isEmpty else {
+        let rawText = finalText.isEmpty ? fallbackText : finalText
+        guard !rawText.isEmpty else {
             appState.addLog("No transcript to paste.", level: .warning)
             return
         }
 
         // Enhancement via OpenRouter
+        var enhancedText: String?
         if let shortcutID,
-           let prompt = appState.enhancementPrompts[shortcutID],
-           appState.hasOpenRouterCredentials {
-            appState.statusMessage = "Enhancing..."
-            appState.addLog("Sending transcript to OpenRouter for enhancement.", level: .info)
-            do {
-                let enhanced = try await OpenRouterClient.enhance(
-                    transcript: text,
-                    prompt: prompt,
-                    apiKey: appState.openRouterApiKey.trimmed,
-                    model: appState.openRouterModel.trimmed
-                )
-                let trimmedEnhanced = enhanced.trimmed
-                if !trimmedEnhanced.isEmpty {
-                    text = trimmedEnhanced
-                    appState.addLog("Transcript enhanced successfully.", level: .info)
+           let prompt = appState.enhancementPrompts[shortcutID] {
+            if !appState.hasOpenRouterCredentials {
+                let missing = appState.openRouterApiKey.trimmed.isEmpty ? "API key" : "model"
+                appState.statusMessage = "Enhancement skipped: missing \(missing)."
+                appState.addLog("Enhancement skipped: OpenRouter \(missing) is not set.", level: .warning)
+            } else {
+                appState.statusMessage = "Enhancing..."
+                appState.addLog("Sending transcript to OpenRouter for enhancement.", level: .info)
+                do {
+                    let enhanced = try await OpenRouterClient.enhance(
+                        transcript: rawText,
+                        prompt: prompt,
+                        apiKey: appState.openRouterApiKey.trimmed,
+                        model: appState.openRouterModel.trimmed
+                    )
+                    let trimmed = enhanced.trimmed
+                    if !trimmed.isEmpty {
+                        enhancedText = trimmed
+                        appState.addLog("Transcript enhanced successfully.", level: .info)
+                    }
+                } catch {
+                    appState.statusMessage = "Enhancement failed."
+                    appState.addLog("Enhancement failed: \(error.localizedDescription)", level: .error)
                 }
-            } catch {
-                appState.addLog("Enhancement failed, using raw transcript: \(error.localizedDescription)", level: .warning)
             }
         }
 
+        let textToPaste = enhancedText ?? rawText
         let pasteboard = NSPasteboard.general
         let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
         pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-        appState.addTranscriptToHistory(text)
+        pasteboard.setString(textToPaste, forType: .string)
+        appState.addTranscriptToHistory(rawText, enhancedText: enhancedText)
         appState.addLog("Transcript copied to clipboard.", level: .info)
         appState.statusMessage = "Idle"
 
