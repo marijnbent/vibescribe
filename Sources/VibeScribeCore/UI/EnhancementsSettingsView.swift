@@ -1,51 +1,81 @@
 import SwiftUI
 
-private struct PromptRow: View {
+private struct PromptEditSheet: View {
     @Binding var prompt: PromptConfig
-    var onDelete: () -> Void
-    @State private var isExpanded = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Edit Prompt")
+                .font(.headline)
+
+            TextField("Name", text: $prompt.name)
+                .textFieldStyle(.roundedBorder)
+
+            TextEditor(text: $prompt.content)
+                .font(.body)
+                .frame(minHeight: 180)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.secondary.opacity(0.3))
+                )
+
+            Text("The transcription will be appended at the end of your prompt in <transcription> tags.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             HStack {
-                Button {
-                    withAnimation { isExpanded.toggle() }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.right")
-                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(prompt.name.isEmpty ? "Untitled" : prompt.name)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
                 Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding()
+        .frame(width: 440, height: 370)
+    }
+}
 
-                Button {
-                    onDelete()
-                } label: {
-                    Image(systemName: "minus.circle")
-                }
-                .buttonStyle(.borderless)
-                .help("Remove prompt")
+private struct PromptRow: View {
+    @Binding var prompt: PromptConfig
+    var shortcuts: [Binding<ShortcutConfig>]
+    var onDelete: () -> Void
+    @State private var isEditing = false
+
+    var body: some View {
+        HStack {
+            Text(prompt.name.isEmpty ? "Untitled" : prompt.name)
+                .lineLimit(1)
+
+            Spacer()
+
+            ForEach(shortcuts, id: \.wrappedValue.id) { $shortcut in
+                Toggle(shortcut.key.displayName, isOn: Binding(
+                    get: { shortcut.promptID == prompt.id },
+                    set: { shortcut.promptID = $0 ? prompt.id : nil }
+                ))
+                .toggleStyle(.checkbox)
+                .help("Use with \(shortcut.key.displayName)")
             }
 
-            if isExpanded {
-                TextField("Name", text: $prompt.name)
-                    .textFieldStyle(.roundedBorder)
-
-                TextEditor(text: $prompt.content)
-                    .font(.caption)
-                    .frame(height: 120)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.secondary.opacity(0.3))
-                    )
+            Button {
+                isEditing = true
+            } label: {
+                Image(systemName: "pencil")
             }
+            .buttonStyle(.borderless)
+            .help("Edit prompt")
+
+            Button {
+                onDelete()
+            } label: {
+                Image(systemName: "minus.circle")
+            }
+            .buttonStyle(.borderless)
+            .help("Remove prompt")
+        }
+        .sheet(isPresented: $isEditing) {
+            PromptEditSheet(prompt: $prompt)
         }
     }
 }
@@ -65,29 +95,16 @@ struct EnhancementsSettingsView: View {
             }
 
             Section {
-                ForEach($appState.shortcuts) { $shortcut in
-                    Picker(shortcut.key.displayName, selection: $shortcut.promptID) {
-                        Text("None").tag(UUID?.none)
-                        ForEach(appState.prompts) { prompt in
-                            Text(prompt.name).tag(UUID?.some(prompt.id))
-                        }
-                    }
-                }
-            } header: {
-                Text("Shortcut Prompts")
-            } footer: {
-                Text("Assign a prompt to each shortcut. The transcription is sent to OpenRouter with the selected prompt.")
-            }
-
-            Section {
                 if appState.prompts.isEmpty {
                     Text("No prompts configured.")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach($appState.prompts) { $prompt in
-                        PromptRow(prompt: $prompt, onDelete: {
-                            appState.deletePrompt(id: prompt.id)
-                        })
+                        PromptRow(
+                            prompt: $prompt,
+                            shortcuts: $appState.shortcuts.map { $s in $s },
+                            onDelete: { appState.deletePrompt(id: prompt.id) }
+                        )
                     }
                 }
             } header: {
@@ -102,7 +119,7 @@ struct EnhancementsSettingsView: View {
                     .help("Add prompt")
                 }
             } footer: {
-                Text("Create named prompts to enhance transcriptions via OpenRouter.")
+                Text("Create named prompts to enhance transcriptions via OpenRouter. Check shortcuts to assign them.")
             }
         }
         .formStyle(.grouped)
