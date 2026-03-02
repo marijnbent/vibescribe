@@ -1,22 +1,50 @@
 import AppKit
 import SwiftUI
 
+enum SettingsTab: String, CaseIterable {
+    case general, shortcuts, enhancements, history, logs, about
+
+    var toolbarIdentifier: NSToolbarItem.Identifier {
+        NSToolbarItem.Identifier(rawValue)
+    }
+
+    var label: String {
+        switch self {
+        case .general: "General"
+        case .shortcuts: "Shortcuts"
+        case .enhancements: "Enhancements"
+        case .history: "History"
+        case .logs: "Logs"
+        case .about: "About"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .general: "gearshape"
+        case .shortcuts: "keyboard"
+        case .enhancements: "wand.and.stars"
+        case .history: "clock"
+        case .logs: "list.bullet.rectangle"
+        case .about: "info.circle"
+        }
+    }
+}
+
 struct MainView: View {
     @ObservedObject var appState: AppState
     @State private var expandedHistoryEntries: Set<UUID> = []
 
     var body: some View {
-        TabView {
-            generalTab
-                .tabItem { Label("General", systemImage: "gearshape") }
-            ShortcutsSettingsView(appState: appState)
-                .tabItem { Label("Shortcuts", systemImage: "keyboard") }
-            EnhancementsSettingsView(appState: appState)
-                .tabItem { Label("Enhancements", systemImage: "wand.and.stars") }
-            historyTab
-                .tabItem { Label("History", systemImage: "clock") }
-            logsTab
-                .tabItem { Label("Logs", systemImage: "list.bullet.rectangle") }
+        Group {
+            switch appState.selectedTab {
+            case .general: generalTab
+            case .shortcuts: ShortcutsSettingsView(appState: appState)
+            case .enhancements: EnhancementsSettingsView(appState: appState)
+            case .history: historyTab
+            case .logs: logsTab
+            case .about: aboutTab
+            }
         }
         .frame(minWidth: 680, minHeight: 560)
     }
@@ -176,6 +204,24 @@ struct MainView: View {
             }
         }
         .padding(.top)
+    }
+
+    private var aboutTab: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            Image(systemName: "waveform")
+                .font(.system(size: 48))
+                .foregroundStyle(.secondary)
+            Text("VibeScribe")
+                .font(.title)
+                .fontWeight(.semibold)
+            Text("Voice-to-text for macOS")
+                .foregroundStyle(.secondary)
+            Link("GitHub", destination: URL(string: "https://github.com/nicktmro/vibescribe")!)
+                .foregroundStyle(.tint)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func historyRow(label: String?, text: String, entryID: UUID) -> some View {
