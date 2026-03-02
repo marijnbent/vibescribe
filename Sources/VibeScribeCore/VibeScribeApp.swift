@@ -22,6 +22,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private var deepgramClient: DeepgramClient!
     private var stopWorkItem: DispatchWorkItem?
     private var isLatchedRecording = false
+    private var didPauseMedia = false
     private var activeShortcutID: UUID?
     private var shortcutLastKeyDown: [UUID: TimeInterval] = [:]
     private var escGlobalMonitor: Any?
@@ -238,6 +239,10 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         cancelPendingStop()
         isLatchedRecording = false
         activeShortcutID = nil
+        if didPauseMedia {
+            sendMediaPlayPauseKey()
+            didPauseMedia = false
+        }
         deepgramClient.disconnect()
         appState.isRecording = false
         appState.overlayVisible = false
@@ -276,6 +281,10 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             appState.statusMessage = "Listening..."
             overlayWindowController.show()
             playSound("Tink")
+            if appState.pauseMediaDuringRecording {
+                sendMediaPlayPauseKey()
+                didPauseMedia = true
+            }
             appState.addLog("Language: \(appState.deepgramLanguage.displayName) (\(appState.deepgramLanguage.deepgramCode)).", level: .info)
             appState.addLog("Listening started.", level: .info)
         } catch {
@@ -308,6 +317,10 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         deepgramClient.closeStream { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
+                if self.didPauseMedia {
+                    self.sendMediaPlayPauseKey()
+                    self.didPauseMedia = false
+                }
                 self.appState.statusMessage = "Idle"
                 self.appState.addLog("Listening stopped.", level: .info)
                 await self.pasteFinalTranscript(shortcutID: shortcutID)
@@ -340,6 +353,10 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         deepgramClient.disconnect()
         isLatchedRecording = false
         activeShortcutID = nil
+        if didPauseMedia {
+            sendMediaPlayPauseKey()
+            didPauseMedia = false
+        }
         appState.isRecording = false
         appState.overlayVisible = false
         overlayWindowController.hide()
@@ -380,6 +397,24 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             NSEvent.removeMonitor(monitor)
             escLocalMonitor = nil
         }
+    }
+
+    // MARK: - Media Control
+
+    private func sendMediaPlayPauseKey() {
+        func post(down: Bool) {
+            let flags = down ? 0xa00 : 0xb00
+            let data1 = Int((16 << 16) | (down ? 0xa << 8 : 0xb << 8))
+            let event = NSEvent.otherEvent(
+                with: .systemDefined, location: .zero,
+                modifierFlags: NSEvent.ModifierFlags(rawValue: UInt(flags)),
+                timestamp: 0, windowNumber: 0, context: nil,
+                subtype: 8, data1: data1, data2: -1
+            )
+            event?.cgEvent?.post(tap: .cghidEventTap)
+        }
+        post(down: true)
+        post(down: false)
     }
 
     // MARK: - Sound Effects
