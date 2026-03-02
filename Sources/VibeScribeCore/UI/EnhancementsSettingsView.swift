@@ -16,78 +16,92 @@ struct EnhancementsSettingsView: View {
     """
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Enhancements")
-                    .font(.headline)
-
-                GroupBox("OpenRouter") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        SecureField("API Key", text: $appState.openRouterApiKey)
-                        TextField("Model", text: $appState.openRouterModel)
-                        Text("Enter your OpenRouter API key and model identifier (e.g. google/gemini-2.5-flash-lite or openai/gpt-5-nano).")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                GroupBox("Per-Shortcut Enhancement") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("The transcription is appended to your prompt as <transcription>…</transcription>.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        if appState.shortcuts.isEmpty {
-                            Text("No shortcuts configured.")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(appState.shortcuts) { shortcut in
-                                shortcutEnhancementRow(shortcut)
-                                if shortcut.id != appState.shortcuts.last?.id {
-                                    Divider()
-                                }
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
+        Form {
+            Section {
+                SecureField("API Key", text: $appState.openRouterApiKey)
+                TextField("Model", text: $appState.openRouterModel)
+            } header: {
+                Text("OpenRouter")
+            } footer: {
+                Text("Enter your OpenRouter API key and model identifier (e.g. google/gemini-2.5-flash-lite or openai/gpt-5-nano).")
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
 
-    private func shortcutEnhancementRow(_ shortcut: ShortcutConfig) -> some View {
-        let isEnabled = Binding<Bool>(
+            Section {
+                if appState.shortcuts.isEmpty {
+                    Text("No shortcuts configured.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(appState.shortcuts) { shortcut in
+                        ShortcutEnhancementRow(
+                            shortcut: shortcut,
+                            appState: appState
+                        )
+                    }
+                }
+            } header: {
+                Text("Prompts")
+            } footer: {
+                Text("The transcription is appended to your prompt as <transcription>…</transcription>.")
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct ShortcutEnhancementRow: View {
+    let shortcut: ShortcutConfig
+    @ObservedObject var appState: AppState
+
+    private var isEnabled: Binding<Bool> {
+        Binding(
             get: { appState.enhancementPrompts[shortcut.id] != nil },
             set: { enabled in
                 if enabled {
-                    appState.enhancementPrompts[shortcut.id] = Self.defaultPrompt
+                    appState.enhancementPrompts[shortcut.id] = EnhancementsSettingsView.defaultPrompt
                 } else {
                     appState.enhancementPrompts.removeValue(forKey: shortcut.id)
                 }
             }
         )
+    }
 
-        let promptBinding = Binding<String>(
-            get: { appState.enhancementPrompts[shortcut.id] ?? Self.defaultPrompt },
+    private var promptBinding: Binding<String> {
+        Binding(
+            get: { appState.enhancementPrompts[shortcut.id] ?? EnhancementsSettingsView.defaultPrompt },
             set: { appState.enhancementPrompts[shortcut.id] = $0 }
         )
+    }
 
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("\(shortcut.key.displayName) (\(shortcut.mode.displayName))")
-                    .font(.subheadline)
-                Spacer()
+    private var isModified: Bool {
+        appState.enhancementPrompts[shortcut.id] != nil
+            && appState.enhancementPrompts[shortcut.id] != EnhancementsSettingsView.defaultPrompt
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            LabeledContent {
                 Toggle("Enhance", isOn: isEnabled)
                     .toggleStyle(.switch)
+                    .labelsHidden()
+            } label: {
+                Text("\(shortcut.key.displayName) (\(shortcut.mode.displayName))")
             }
+
             if isEnabled.wrappedValue {
                 TextEditor(text: promptBinding)
                     .font(.caption)
-                    .frame(height: 60)
-                    .border(Color.secondary.opacity(0.3))
+                    .frame(height: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.secondary.opacity(0.3))
+                    )
+                if isModified {
+                    Button("Reset to Default") {
+                        appState.enhancementPrompts[shortcut.id] = EnhancementsSettingsView.defaultPrompt
+                    }
+                    .font(.caption)
+                }
             }
         }
     }

@@ -2,6 +2,7 @@ import ApplicationServices
 import AVFoundation
 import Combine
 import Foundation
+import SwiftUI
 
 @MainActor
 final class AppState: ObservableObject {
@@ -226,6 +227,14 @@ enum PermissionStatus: String {
 
     var isGranted: Bool {
         self == .authorized
+    }
+
+    var color: Color {
+        switch self {
+        case .authorized: .green
+        case .denied: .orange
+        case .notDetermined: .gray
+        }
     }
 }
 

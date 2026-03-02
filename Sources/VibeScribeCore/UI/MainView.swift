@@ -7,33 +7,124 @@ struct MainView: View {
 
     var body: some View {
         TabView {
-            homeTab
-                .tabItem { Label("Home", systemImage: "house") }
+            generalTab
+                .tabItem { Label("General", systemImage: "gearshape") }
             ShortcutsSettingsView(appState: appState)
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
             EnhancementsSettingsView(appState: appState)
-                .tabItem { Label("Enhance", systemImage: "wand.and.stars") }
+                .tabItem { Label("Enhancements", systemImage: "wand.and.stars") }
             historyTab
                 .tabItem { Label("History", systemImage: "clock") }
             logsTab
                 .tabItem { Label("Logs", systemImage: "list.bullet.rectangle") }
         }
-        .padding(24)
-        .frame(minWidth: 560, minHeight: 560)
+        .frame(minWidth: 680, minHeight: 560)
     }
 
-    private var homeTab: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
-                permissionsSection
-                Divider()
-                settingsSection
+    private var generalTab: some View {
+        Form {
+            Section("Permissions") {
+                LabeledContent {
+                    Button("Request") {
+                        appState.requestMicrophonePermission()
+                    }
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Recording")
+                            Text(appState.microphonePermission.rawValue)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Circle()
+                            .fill(appState.microphonePermission.color)
+                            .frame(width: 8, height: 8)
+                    }
+                }
+
+                LabeledContent {
+                    Button("Request") {
+                        appState.requestAccessibilityPermission()
+                    }
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Pasting")
+                            Text(appState.accessibilityPermission.rawValue)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Circle()
+                            .fill(appState.accessibilityPermission.color)
+                            .frame(width: 8, height: 8)
+                    }
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Section {
+                SecureField("API Key", text: $appState.apiKey)
+                Picker("Language", selection: $appState.deepgramLanguage) {
+                    ForEach(DeepgramLanguage.allCases) { language in
+                        Text(language.displayName).tag(language)
+                    }
+                }
+            } header: {
+                Text("Transcription")
+            } footer: {
+                Text("Automatic detects the spoken language.")
+            }
+
+            Section("Behavior") {
+                Toggle("Cancel recording with Escape", isOn: $appState.escToCancelRecording)
+                Toggle("Play sound effects", isOn: $appState.playSoundEffects)
+            }
+
+            Section("History") {
+                Picker("Keep history", selection: $appState.historyLimit) {
+                    ForEach(HistoryLimit.allCases) { limit in
+                        Text(limit.displayName).tag(limit)
+                    }
+                }
+            }
         }
+        .formStyle(.grouped)
         .onAppear {
             appState.refreshPermissions()
+        }
+    }
+
+    private var historyTab: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if appState.transcriptHistory.isEmpty {
+                Text("No transcriptions yet.")
+                    .foregroundStyle(.secondary)
+                    .padding()
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(appState.transcriptHistory) { entry in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(Self.formatter.string(from: entry.timestamp))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+
+                                if entry.enhancedText != nil {
+                                    historyRow(label: "Original", text: entry.text, entryID: entry.id)
+                                    historyRow(label: "Enhanced", text: entry.enhancedText!, entryID: entry.id)
+                                } else {
+                                    historyRow(label: nil, text: entry.text, entryID: entry.id)
+                                }
+                            }
+                            .padding(.vertical, 8)
+                            Divider()
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
         }
     }
 
@@ -47,13 +138,16 @@ struct MainView: View {
                     appState.clearLogs()
                 }
             }
+            .padding(.horizontal)
 
             if appState.logs.isEmpty {
                 Text("No logs yet.")
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal)
+                Spacer()
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(appState.logs.reversed()) { entry in
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(alignment: .firstTextBaseline) {
@@ -77,105 +171,11 @@ struct MainView: View {
                             Divider()
                         }
                     }
-                    .padding(.trailing, 8)
+                    .padding(.horizontal)
                 }
             }
         }
-    }
-
-    private var historyTab: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Transcript History")
-                    .font(.headline)
-                Spacer()
-                Picker("Keep", selection: $appState.historyLimit) {
-                    ForEach(HistoryLimit.allCases) { limit in
-                        Text(limit.displayName).tag(limit)
-                    }
-                }
-                .frame(width: 160)
-            }
-
-            if appState.transcriptHistory.isEmpty {
-                Text("No transcriptions yet.")
-                    .foregroundStyle(.secondary)
-                Spacer()
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(appState.transcriptHistory) { entry in
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(Self.formatter.string(from: entry.timestamp))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-
-                                if entry.enhancedText != nil {
-                                    historyRow(label: "Original", text: entry.text, entryID: entry.id)
-                                    historyRow(label: "Enhanced", text: entry.enhancedText!, entryID: entry.id)
-                                } else {
-                                    historyRow(label: nil, text: entry.text, entryID: entry.id)
-                                }
-                            }
-                            .padding(.vertical, 8)
-                            Divider()
-                        }
-                    }
-                    .padding(.trailing, 8)
-                }
-            }
-        }
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("VibeScribe")
-                .font(.system(size: 28, weight: .semibold))
-            Text("Push-to-talk transcription powered by Deepgram")
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var permissionsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Permissions")
-                .font(.headline)
-            PermissionRow(
-                title: "Recording",
-                status: appState.microphonePermission,
-                actionTitle: "Request"
-            ) {
-                appState.requestMicrophonePermission()
-            }
-            PermissionRow(
-                title: "Pasting",
-                status: appState.accessibilityPermission,
-                actionTitle: "Request"
-            ) {
-                appState.requestAccessibilityPermission()
-            }
-        }
-    }
-
-    private var settingsSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Transcription")
-                .font(.headline)
-            VStack(alignment: .leading, spacing: 12) {
-                TextField("API Key", text: $appState.apiKey)
-                Picker("Language", selection: $appState.deepgramLanguage) {
-                    ForEach(DeepgramLanguage.allCases) { language in
-                        Text(language.displayName).tag(language)
-                    }
-                }
-                Text("Automatic uses Deepgram multilingual mode (language=multi).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Toggle("Cancel recording with Escape key", isOn: $appState.escToCancelRecording)
-                Toggle("Play sound effects", isOn: $appState.playSoundEffects)
-            }
-            .textFieldStyle(.roundedBorder)
-        }
+        .padding(.top)
     }
 
     private func historyRow(label: String?, text: String, entryID: UUID) -> some View {
@@ -220,29 +220,6 @@ struct MainView: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-    }
-}
-
-private struct PermissionRow: View {
-    let title: String
-    let status: PermissionStatus
-    let actionTitle: String
-    let action: () -> Void
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline)
-                Text(status.rawValue)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button(actionTitle) {
-                action()
-            }
-        }
     }
 }
 
