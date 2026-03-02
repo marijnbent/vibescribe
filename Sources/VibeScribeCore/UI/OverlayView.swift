@@ -13,7 +13,7 @@ struct OverlayView: View {
             Spacer(minLength: 0)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Listening")
+                Text(appState.overlayLabel)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white)
             }
@@ -36,9 +36,9 @@ struct OverlayView: View {
         )
         .id(appState.overlayPulseID)
         .onAppear {
-            pulse = appState.isRecording
+            pulse = appState.overlayVisible
             withAnimation(.spring(response: 0.42, dampingFraction: 0.72, blendDuration: 0.2)) {
-                appear = appState.isRecording
+                appear = appState.overlayVisible
             }
             withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
                 shimmer = true
@@ -49,9 +49,9 @@ struct OverlayView: View {
             pulse = false
             shimmer = false
         }
-        .onChange(of: appState.isRecording) { isRecording in
-            pulse = isRecording
-            if isRecording {
+        .onChange(of: appState.overlayVisible) { visible in
+            pulse = visible
+            if visible {
                 withAnimation(.spring(response: 0.42, dampingFraction: 0.72, blendDuration: 0.2)) {
                     appear = true
                 }

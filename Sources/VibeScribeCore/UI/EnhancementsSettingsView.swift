@@ -3,7 +3,17 @@ import SwiftUI
 struct EnhancementsSettingsView: View {
     @ObservedObject var appState: AppState
 
-    static let defaultPrompt = "Clean up this transcription. Fix spelling and grammar errors, remove filler words (um, uh, like), but keep the original meaning and tone."
+    static let defaultPrompt = """
+    Clean up the following transcription. Fix spelling, grammar, punctuation, and formatting only. \
+    Do not change, remove, or rephrase any of the original words or meaning. Keep the speaker's \
+    voice and intent exactly as-is.
+
+    Remove filler words (um, uh, you know) and false starts only when they add no meaning. \
+    Add paragraph breaks where topics shift naturally.
+
+    Return only the cleaned transcription as plain text. No explanations, no quotes, no HTML tags, \
+    no markdown, no preamble, no closing remarks. Just the text.
+    """
 
     var body: some View {
         ScrollView {

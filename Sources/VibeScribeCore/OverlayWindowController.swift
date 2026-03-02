@@ -21,13 +21,13 @@ final class OverlayWindowController {
         isShowing = true
         animationID = UUID()
 
-        guard let screenFrame = NSScreen.main?.visibleFrame else {
+        guard let screen = NSScreen.main else {
             panel.orderFrontRegardless()
             return
         }
 
-        let target = targetFrame(in: screenFrame)
-        let offscreen = offscreenFrame(in: screenFrame, width: target.width, height: target.height)
+        let target = targetFrame(screen: screen)
+        let offscreen = offscreenFrame(screen: screen, width: target.width, height: target.height)
 
         panel.alphaValue = 0
         panel.setFrame(offscreen, display: false)
@@ -47,13 +47,13 @@ final class OverlayWindowController {
         isShowing = false
         let hideID = animationID
 
-        guard let screenFrame = NSScreen.main?.visibleFrame else {
+        guard let screen = NSScreen.main else {
             panel.orderOut(nil)
             return
         }
 
-        let target = targetFrame(in: screenFrame)
-        let offscreen = offscreenFrame(in: screenFrame, width: target.width, height: target.height)
+        let target = targetFrame(screen: screen)
+        let offscreen = offscreenFrame(screen: screen, width: target.width, height: target.height)
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.18
@@ -91,25 +91,29 @@ final class OverlayWindowController {
         panel.ignoresMouseEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
 
-        if let screenFrame = NSScreen.main?.visibleFrame {
-            let target = targetFrame(in: screenFrame)
+        if let screen = NSScreen.main {
+            let target = targetFrame(screen: screen)
             panel.setFrame(target, display: false)
         }
 
         return panel
     }
 
-    private func targetFrame(in screenFrame: CGRect) -> CGRect {
-        let width = min(180, screenFrame.width - 80)
+    private func targetFrame(screen: NSScreen) -> CGRect {
+        let fullFrame = screen.frame
+        let visibleFrame = screen.visibleFrame
+        let width = min(180, fullFrame.width - 80)
         let height: CGFloat = 32
-        let x = screenFrame.midX - width / 2
-        let y = screenFrame.maxY - height - 28
+        let x = fullFrame.midX - width / 2
+        let y = visibleFrame.maxY - height - 28
         return CGRect(x: x, y: y, width: width, height: height)
     }
 
-    private func offscreenFrame(in screenFrame: CGRect, width: CGFloat, height: CGFloat) -> CGRect {
-        let x = screenFrame.midX - width / 2
-        let y = screenFrame.maxY + 8
+    private func offscreenFrame(screen: NSScreen, width: CGFloat, height: CGFloat) -> CGRect {
+        let fullFrame = screen.frame
+        let visibleFrame = screen.visibleFrame
+        let x = fullFrame.midX - width / 2
+        let y = visibleFrame.maxY + 8
         return CGRect(x: x, y: y, width: width, height: height)
     }
 }

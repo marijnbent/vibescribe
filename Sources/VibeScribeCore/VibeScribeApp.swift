@@ -237,6 +237,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         activeShortcutID = nil
         deepgramClient.disconnect()
         appState.isRecording = false
+        appState.overlayVisible = false
         overlayWindowController.hide()
         appState.statusMessage = "Input changed. Ready."
         appState.addLog("Recording stopped because the input device changed.", level: .warning)
@@ -266,6 +267,8 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             }
 
             appState.isRecording = true
+            appState.overlayLabel = "Listening"
+            appState.overlayVisible = true
             appState.statusMessage = "Listening..."
             overlayWindowController.show()
             playSound("Tink")
@@ -286,11 +289,17 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         isLatchedRecording = false
         audioCapture.stop()
         appState.isRecording = false
-        overlayWindowController.hide()
-        playSound("Pop")
         appState.statusMessage = "Finalizing..."
 
         let shortcutID = activeShortcutID
+        let hasEnhancement = shortcutID.flatMap { appState.enhancementPrompts[$0] } != nil
+
+        if hasEnhancement {
+            appState.overlayLabel = "Enhancing"
+        } else {
+            appState.overlayVisible = false
+            overlayWindowController.hide()
+        }
 
         deepgramClient.closeStream { [weak self] in
             Task { @MainActor in
@@ -328,6 +337,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         isLatchedRecording = false
         activeShortcutID = nil
         appState.isRecording = false
+        appState.overlayVisible = false
         overlayWindowController.hide()
         playSound("Pop")
         appState.statusMessage = "Cancelled."
@@ -383,17 +393,21 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         let rawText = finalText.isEmpty ? fallbackText : finalText
         guard !rawText.isEmpty else {
             appState.addLog("No transcript to paste.", level: .warning)
+            hideOverlay()
+            playErrorSound()
             return
         }
 
         // Enhancement via OpenRouter
         var enhancedText: String?
+        var enhancementFailed = false
         if let shortcutID,
            let prompt = appState.enhancementPrompts[shortcutID] {
             if !appState.hasOpenRouterCredentials {
                 let missing = appState.openRouterApiKey.trimmed.isEmpty ? "API key" : "model"
                 appState.statusMessage = "Enhancement skipped: missing \(missing)."
                 appState.addLog("Enhancement skipped: OpenRouter \(missing) is not set.", level: .warning)
+                enhancementFailed = true
             } else {
                 appState.statusMessage = "Enhancing..."
                 appState.addLog("Sending transcript to OpenRouter for enhancement.", level: .info)
@@ -412,9 +426,12 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
                 } catch {
                     appState.statusMessage = "Enhancement failed."
                     appState.addLog("Enhancement failed: \(error.localizedDescription)", level: .error)
+                    enhancementFailed = true
                 }
             }
         }
+
+        hideOverlay()
 
         let textToPaste = enhancedText ?? rawText
         let pasteboard = NSPasteboard.general
@@ -432,6 +449,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         guard let source = CGEventSource(stateID: .combinedSessionState) else {
             appState.addLog("Failed to create CGEventSource for paste.", level: .error)
             snapshot.restore(to: pasteboard)
+            if enhancementFailed { playErrorSound() } else { playSound("Pop") }
             return
         }
 
@@ -445,9 +463,17 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
         appState.addLog("Paste command sent (Cmd+V).", level: .info)
 
+        if enhancementFailed { playErrorSound() } else { playSound("Pop") }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + clipboardRestoreDelay) {
             snapshot.restore(to: pasteboard)
         }
+    }
+
+    private func hideOverlay() {
+        guard appState.overlayVisible else { return }
+        appState.overlayVisible = false
+        overlayWindowController.hide()
     }
 }
 

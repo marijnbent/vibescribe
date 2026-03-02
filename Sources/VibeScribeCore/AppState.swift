@@ -23,6 +23,8 @@ final class AppState: ObservableObject {
     @Published var logs: [LogEntry] = []
     @Published var transcriptHistory: [TranscriptHistoryEntry] = []
     @Published var overlayPulseID = UUID()
+    @Published var overlayVisible = false
+    @Published var overlayLabel = "Listening"
     @Published var microphonePermission: PermissionStatus = .notDetermined
     @Published var accessibilityPermission: PermissionStatus = .notDetermined
 
