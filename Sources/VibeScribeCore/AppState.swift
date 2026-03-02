@@ -17,6 +17,7 @@ final class AppState: ObservableObject {
     private static let escToCancelRecordingKey = "VibeScribe.EscToCancelRecording"
     private static let playSoundEffectsKey = "VibeScribe.PlaySoundEffects"
     private static let pauseMediaDuringRecordingKey = "VibeScribe.PauseMediaDuringRecording"
+    private static let overlayPositionKey = "VibeScribe.OverlayPosition"
     private static let accessibilityPromptDelayNanoseconds: UInt64 = 500_000_000
 
     @Published var isRecording = false
@@ -88,6 +89,12 @@ final class AppState: ObservableObject {
         }
     }
 
+    @Published var overlayPosition: OverlayPosition {
+        didSet {
+            UserDefaults.standard.set(overlayPosition.rawValue, forKey: Self.overlayPositionKey)
+        }
+    }
+
     @Published var deepgramLanguage: DeepgramLanguage {
         didSet {
             UserDefaults.standard.set(deepgramLanguage.rawValue, forKey: Self.deepgramLanguageKey)
@@ -106,6 +113,8 @@ final class AppState: ObservableObject {
         escToCancelRecording = (UserDefaults.standard.object(forKey: Self.escToCancelRecordingKey) as? Bool) ?? true
         playSoundEffects = (UserDefaults.standard.object(forKey: Self.playSoundEffectsKey) as? Bool) ?? false
         pauseMediaDuringRecording = (UserDefaults.standard.object(forKey: Self.pauseMediaDuringRecordingKey) as? Bool) ?? false
+        let savedPosition = UserDefaults.standard.string(forKey: Self.overlayPositionKey)
+        overlayPosition = savedPosition.flatMap(OverlayPosition.init(rawValue:)) ?? .top
         let savedLanguage = UserDefaults.standard.string(forKey: Self.deepgramLanguageKey)
         deepgramLanguage = savedLanguage.flatMap(DeepgramLanguage.init(rawValue:)) ?? .automatic
         let savedLimit = UserDefaults.standard.integer(forKey: Self.historyLimitKey)
@@ -226,6 +235,19 @@ struct TranscriptHistoryEntry: Identifiable {
         let sentences = source.splitIntoSentences()
         if sentences.count <= 3 { return source }
         return sentences.prefix(3).joined() + "…"
+    }
+}
+
+enum OverlayPosition: String, CaseIterable, Identifiable {
+    case top, bottom
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .top: "Top"
+        case .bottom: "Bottom"
+        }
     }
 }
 

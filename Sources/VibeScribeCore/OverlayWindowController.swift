@@ -105,7 +105,13 @@ final class OverlayWindowController {
         let width = min(180, fullFrame.width - 80)
         let height: CGFloat = 32
         let x = fullFrame.midX - width / 2
-        let y = visibleFrame.maxY - height - 28
+        let y: CGFloat
+        switch appState.overlayPosition {
+        case .top:
+            y = visibleFrame.maxY - height - 28
+        case .bottom:
+            y = visibleFrame.minY + 28
+        }
         return CGRect(x: x, y: y, width: width, height: height)
     }
 
@@ -113,7 +119,13 @@ final class OverlayWindowController {
         let fullFrame = screen.frame
         let visibleFrame = screen.visibleFrame
         let x = fullFrame.midX - width / 2
-        let y = visibleFrame.maxY + 8
+        let y: CGFloat
+        switch appState.overlayPosition {
+        case .top:
+            y = visibleFrame.maxY + 8
+        case .bottom:
+            y = visibleFrame.minY - height - 8
+        }
         return CGRect(x: x, y: y, width: width, height: height)
     }
 }
