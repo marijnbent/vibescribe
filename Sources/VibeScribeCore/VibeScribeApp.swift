@@ -359,11 +359,11 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
         escLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.keyCode == escKeyCode else { return event }
-            guard let self, self.appState.isRecording, self.appState.escToCancelRecording else { return event }
             Task { @MainActor in
+                guard let self, self.appState.isRecording, self.appState.escToCancelRecording else { return }
                 self.cancelRecording()
             }
-            return nil
+            return event
         }
     }
 
