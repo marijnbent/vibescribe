@@ -289,6 +289,11 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         appState.isRecording = false
         appState.statusMessage = "Finalizing..."
 
+        if didPauseMedia {
+            sendMediaPlayPauseKey()
+            didPauseMedia = false
+        }
+
         let shortcutID = activeShortcutID
         let hasEnhancement = shortcutID.flatMap { appState.promptContent(forShortcutID: $0) } != nil
 
@@ -302,10 +307,6 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         deepgramClient.closeStream { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                if self.didPauseMedia {
-                    self.sendMediaPlayPauseKey()
-                    self.didPauseMedia = false
-                }
                 self.appState.statusMessage = "Idle"
                 self.appState.addLog("Listening stopped.", level: .info)
                 await self.pasteFinalTranscript(shortcutID: shortcutID)
