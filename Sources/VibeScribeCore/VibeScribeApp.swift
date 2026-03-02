@@ -385,6 +385,10 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         NSSound(named: name)?.play()
     }
 
+    private func playErrorSound() {
+        NSSound(named: "Basso")?.play()
+    }
+
     // MARK: - Paste with Enhancement
 
     private func pasteFinalTranscript(shortcutID: UUID?) async {
