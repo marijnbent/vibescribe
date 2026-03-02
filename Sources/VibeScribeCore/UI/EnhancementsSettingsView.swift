@@ -25,7 +25,7 @@ struct EnhancementsSettingsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         SecureField("API Key", text: $appState.openRouterApiKey)
                         TextField("Model", text: $appState.openRouterModel)
-                        Text("Enter your OpenRouter API key and model identifier (e.g. openai/gpt-4o-mini).")
+                        Text("Enter your OpenRouter API key and model identifier (e.g. google/gemini-2.5-flash-lite or openai/gpt-5-nano).")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

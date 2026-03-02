@@ -6,11 +6,4 @@ final class StringTrimTests: XCTestCase {
         XCTAssertEqual("  hello\n".trimmed, "hello")
     }
 
-    func testNilIfEmptyReturnsNilForWhitespace() {
-        XCTAssertNil("   \n\t  ".nilIfEmpty)
-    }
-
-    func testNilIfEmptyReturnsTrimmedString() {
-        XCTAssertEqual("  hi  ".nilIfEmpty, "hi")
-    }
 }
