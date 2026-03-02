@@ -16,7 +16,9 @@ final class MenuBarController {
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
-        statusItem.button?.title = "VibeScribe"
+        if let button = statusItem.button {
+            button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "VibeScribe")
+        }
 
         let menu = NSMenu()
 
