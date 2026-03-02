@@ -12,6 +12,8 @@ final class AppState: ObservableObject {
     private static let openRouterApiKeyKey = "VibeScribe.OpenRouterApiKey"
     private static let openRouterModelKey = "VibeScribe.OpenRouterModel"
     private static let enhancementPromptsKey = "VibeScribe.EnhancementPrompts"
+    private static let escToCancelRecordingKey = "VibeScribe.EscToCancelRecording"
+    private static let playSoundEffectsKey = "VibeScribe.PlaySoundEffects"
     private static let accessibilityPromptDelayNanoseconds: UInt64 = 500_000_000
 
     @Published var isRecording = false
@@ -63,6 +65,18 @@ final class AppState: ObservableObject {
         !openRouterApiKey.trimmed.isEmpty && !openRouterModel.trimmed.isEmpty
     }
 
+    @Published var escToCancelRecording: Bool {
+        didSet {
+            UserDefaults.standard.set(escToCancelRecording, forKey: Self.escToCancelRecordingKey)
+        }
+    }
+
+    @Published var playSoundEffects: Bool {
+        didSet {
+            UserDefaults.standard.set(playSoundEffects, forKey: Self.playSoundEffectsKey)
+        }
+    }
+
     @Published var deepgramLanguage: DeepgramLanguage {
         didSet {
             UserDefaults.standard.set(deepgramLanguage.rawValue, forKey: Self.deepgramLanguageKey)
@@ -78,6 +92,8 @@ final class AppState: ObservableObject {
 
     init() {
         apiKey = UserDefaults.standard.string(forKey: Self.apiKeyKey) ?? ""
+        escToCancelRecording = (UserDefaults.standard.object(forKey: Self.escToCancelRecordingKey) as? Bool) ?? true
+        playSoundEffects = (UserDefaults.standard.object(forKey: Self.playSoundEffectsKey) as? Bool) ?? false
         let savedLanguage = UserDefaults.standard.string(forKey: Self.deepgramLanguageKey)
         deepgramLanguage = savedLanguage.flatMap(DeepgramLanguage.init(rawValue:)) ?? .automatic
         let savedLimit = UserDefaults.standard.integer(forKey: Self.historyLimitKey)

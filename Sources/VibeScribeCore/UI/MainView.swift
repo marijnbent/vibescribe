@@ -28,7 +28,6 @@ struct MainView: View {
                 permissionsSection
                 Divider()
                 settingsSection
-                transcriptSection
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -165,53 +164,23 @@ struct MainView: View {
 
     private var settingsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            GroupBox("Push-to-Talk") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("\(appState.shortcuts.count) shortcut\(appState.shortcuts.count == 1 ? "" : "s") configured")
-                        .font(.subheadline)
-                    Text("Configure keys and modes in the Shortcuts tab.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            GroupBox("Deepgram") {
-                VStack(alignment: .leading, spacing: 12) {
-                    TextField("API Key", text: $appState.apiKey)
-                    Picker("Language", selection: $appState.deepgramLanguage) {
-                        ForEach(DeepgramLanguage.allCases) { language in
-                            Text(language.displayName).tag(language)
-                        }
+            Text("Transcription")
+                .font(.headline)
+            VStack(alignment: .leading, spacing: 12) {
+                TextField("API Key", text: $appState.apiKey)
+                Picker("Language", selection: $appState.deepgramLanguage) {
+                    ForEach(DeepgramLanguage.allCases) { language in
+                        Text(language.displayName).tag(language)
                     }
-                    Text("Automatic uses Deepgram multilingual mode (language=multi).")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Text("Automatic uses Deepgram multilingual mode (language=multi).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle("Cancel recording with Escape key", isOn: $appState.escToCancelRecording)
+                Toggle("Play sound effects", isOn: $appState.playSoundEffects)
             }
+            .textFieldStyle(.roundedBorder)
         }
-    }
-
-    private var transcriptSection: some View {
-        GroupBox("Latest Transcript") {
-            ScrollView {
-                Text(transcriptText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(height: 120)
-        }
-    }
-
-    private var transcriptText: String {
-        if !appState.finalTranscript.isEmpty {
-            return appState.finalTranscript
-        }
-        if !appState.lastTranscript.isEmpty {
-            return appState.lastTranscript
-        }
-        return "Waiting for transcription..."
     }
 
     private func copyLogEntry(_ entry: LogEntry) {

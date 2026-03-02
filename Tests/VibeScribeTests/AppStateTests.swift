@@ -6,18 +6,24 @@ final class AppStateTests: XCTestCase {
     private let apiKeyDefaultsKey = "VibeScribe.ApiKey"
     private let languageDefaultsKey = "VibeScribe.DeepgramLanguage"
     private let shortcutsDefaultsKey = "VibeScribe.Shortcuts"
+    private let escToCancelDefaultsKey = "VibeScribe.EscToCancelRecording"
+    private let playSoundEffectsDefaultsKey = "VibeScribe.PlaySoundEffects"
 
     override func setUp() {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: apiKeyDefaultsKey)
         UserDefaults.standard.removeObject(forKey: languageDefaultsKey)
         UserDefaults.standard.removeObject(forKey: shortcutsDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: escToCancelDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: playSoundEffectsDefaultsKey)
     }
 
     override func tearDown() {
         UserDefaults.standard.removeObject(forKey: apiKeyDefaultsKey)
         UserDefaults.standard.removeObject(forKey: languageDefaultsKey)
         UserDefaults.standard.removeObject(forKey: shortcutsDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: escToCancelDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: playSoundEffectsDefaultsKey)
         super.tearDown()
     }
 
@@ -115,5 +121,35 @@ final class AppStateTests: XCTestCase {
         let state = AppState()
         XCTAssertEqual(state.shortcuts.count, 1)
         XCTAssertEqual(state.shortcuts[0].key, .rightOption)
+    }
+
+    // MARK: - ESC to Cancel Recording
+
+    func testEscToCancelRecordingDefaultsToTrue() {
+        let state = AppState()
+        XCTAssertTrue(state.escToCancelRecording)
+    }
+
+    func testEscToCancelRecordingPersists() {
+        let state = AppState()
+        state.escToCancelRecording = false
+
+        let restored = AppState()
+        XCTAssertFalse(restored.escToCancelRecording)
+    }
+
+    // MARK: - Sound Effects
+
+    func testPlaySoundEffectsDefaultsToFalse() {
+        let state = AppState()
+        XCTAssertFalse(state.playSoundEffects)
+    }
+
+    func testPlaySoundEffectsPersists() {
+        let state = AppState()
+        state.playSoundEffects = true
+
+        let restored = AppState()
+        XCTAssertTrue(restored.playSoundEffects)
     }
 }

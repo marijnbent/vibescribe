@@ -24,6 +24,8 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private var isLatchedRecording = false
     private var activeShortcutID: UUID?
     private var shortcutLastKeyDown: [UUID: TimeInterval] = [:]
+    private var escGlobalMonitor: Any?
+    private var escLocalMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
     private let doubleClickThreshold: TimeInterval = 0.3
     private let stopDelay: TimeInterval = 0.2
@@ -75,11 +77,14 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             object: nil
         )
 
+        startEscMonitor()
+
         appState.requestInitialPermissionsIfNeeded()
         appState.addLog("VibeScribe launched.", level: .info)
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
+        stopEscMonitor()
         NotificationCenter.default.removeObserver(
             self,
             name: NSApplication.didBecomeActiveNotification,
@@ -263,6 +268,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             appState.isRecording = true
             appState.statusMessage = "Listening..."
             overlayWindowController.show()
+            playSound("Tink")
             appState.addLog("Language: \(appState.deepgramLanguage.displayName) (\(appState.deepgramLanguage.deepgramCode)).", level: .info)
             appState.addLog("Listening started.", level: .info)
         } catch {
@@ -281,6 +287,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         audioCapture.stop()
         appState.isRecording = false
         overlayWindowController.hide()
+        playSound("Pop")
         appState.statusMessage = "Finalizing..."
 
         let shortcutID = activeShortcutID
@@ -308,6 +315,64 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private func cancelPendingStop() {
         stopWorkItem?.cancel()
         stopWorkItem = nil
+    }
+
+    // MARK: - Cancel Recording
+
+    private func cancelRecording() {
+        guard appState.isRecording else { return }
+
+        cancelPendingStop()
+        audioCapture.stop()
+        deepgramClient.disconnect()
+        isLatchedRecording = false
+        activeShortcutID = nil
+        appState.isRecording = false
+        overlayWindowController.hide()
+        playSound("Pop")
+        appState.statusMessage = "Cancelled."
+        appState.addLog("Recording cancelled.", level: .info)
+    }
+
+    // MARK: - ESC Key Monitor
+
+    private func startEscMonitor() {
+        let escKeyCode = UInt16(kVK_Escape)
+
+        escGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == escKeyCode else { return }
+            Task { @MainActor in
+                guard let self, self.appState.isRecording, self.appState.escToCancelRecording else { return }
+                self.cancelRecording()
+            }
+        }
+
+        escLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == escKeyCode else { return event }
+            Task { @MainActor in
+                guard let self, self.appState.isRecording, self.appState.escToCancelRecording else { return }
+                self.cancelRecording()
+            }
+            return event
+        }
+    }
+
+    private func stopEscMonitor() {
+        if let monitor = escGlobalMonitor {
+            NSEvent.removeMonitor(monitor)
+            escGlobalMonitor = nil
+        }
+        if let monitor = escLocalMonitor {
+            NSEvent.removeMonitor(monitor)
+            escLocalMonitor = nil
+        }
+    }
+
+    // MARK: - Sound Effects
+
+    private func playSound(_ name: String) {
+        guard appState.playSoundEffects else { return }
+        NSSound(named: name)?.play()
     }
 
     // MARK: - Paste with Enhancement

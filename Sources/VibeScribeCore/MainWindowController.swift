@@ -25,6 +25,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
             window.contentViewController = hosting
             window.center()
             window.isReleasedWhenClosed = false
+            window.initialFirstResponder = nil
             window.delegate = self
 
             self.window = window
