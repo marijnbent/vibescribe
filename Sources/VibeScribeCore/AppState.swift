@@ -28,6 +28,7 @@ final class AppState: ObservableObject {
     @Published var overlayPulseID = UUID()
     @Published var overlayVisible = false
     @Published var overlayLabel = "Listening"
+    @Published var audioLevel: CGFloat = 0
     @Published var microphonePermission: PermissionStatus = .notDetermined
     @Published var accessibilityPermission: PermissionStatus = .notDetermined
     @Published var selectedTab: SettingsTab = .general
