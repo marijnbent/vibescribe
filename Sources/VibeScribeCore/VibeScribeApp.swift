@@ -27,6 +27,8 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private var escGlobalMonitor: Any?
     private var escLocalMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
+    private var recordingStartTime: TimeInterval = 0
+    private let minimumHoldDuration: TimeInterval = 0.3
     private let doubleClickThreshold: TimeInterval = 0.3
     private let stopDelay: TimeInterval = 0.2
     private let clipboardRestoreDelay: TimeInterval = 0.2
@@ -66,7 +68,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             .store(in: &cancellables)
 
         menuBarController = MenuBarController(
-            onOpenMain: { [weak self] in self?.openMainWindow() },
+            onOpenMain: { [weak self] in self?.mainWindowController.show() },
             onQuit: { NSApp.terminate(nil) }
         )
 
@@ -94,10 +96,6 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
     @objc private func handleAppDidBecomeActive(_ notification: Notification) {
         appState.refreshPermissions()
-    }
-
-    private func openMainWindow() {
-        mainWindowController.show()
     }
 
     // MARK: - Hotkey Listener Management
@@ -252,7 +250,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         guard !apiKey.isEmpty else {
             appState.statusMessage = "Add a Deepgram API key in Settings."
             appState.addLog("Missing API key. Open Settings to add one.", level: .warning)
-            openMainWindow()
+            mainWindowController.show()
             return
         }
 
@@ -266,6 +264,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
                 self?.deepgramClient.sendAudio(buffer: buffer)
             }
 
+            recordingStartTime = CACurrentMediaTime()
             appState.isRecording = true
             appState.overlayLabel = "Listening"
             appState.overlayVisible = true
@@ -313,6 +312,11 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     }
 
     private func scheduleStopRecording() {
+        let elapsed = CACurrentMediaTime() - recordingStartTime
+        if elapsed < minimumHoldDuration {
+            cancelRecording()
+            return
+        }
         cancelPendingStop()
         let workItem = DispatchWorkItem { [weak self] in
             self?.stopRecording()
@@ -398,7 +402,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         guard !rawText.isEmpty else {
             appState.addLog("No transcript to paste.", level: .warning)
             hideOverlay()
-            playErrorSound()
+            playSound("Pop")
             return
         }
 
