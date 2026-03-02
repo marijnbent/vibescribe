@@ -7,6 +7,7 @@ import Foundation
 final class AppState: ObservableObject {
     private static let apiKeyKey = "VibeScribe.ApiKey"
     private static let deepgramLanguageKey = "VibeScribe.DeepgramLanguage"
+    private static let historyLimitKey = "VibeScribe.HistoryLimit"
     private static let accessibilityPromptDelayNanoseconds: UInt64 = 500_000_000
 
     @Published var isRecording = false
@@ -14,6 +15,7 @@ final class AppState: ObservableObject {
     @Published var lastTranscript = ""
     @Published var finalTranscript = ""
     @Published var logs: [LogEntry] = []
+    @Published var transcriptHistory: [TranscriptHistoryEntry] = []
     @Published var overlayPulseID = UUID()
     @Published var microphonePermission: PermissionStatus = .notDetermined
     @Published var accessibilityPermission: PermissionStatus = .notDetermined
@@ -31,10 +33,19 @@ final class AppState: ObservableObject {
         }
     }
 
+    @Published var historyLimit: HistoryLimit = .ten {
+        didSet {
+            UserDefaults.standard.set(historyLimit.rawValue, forKey: Self.historyLimitKey)
+            applyHistoryLimit()
+        }
+    }
+
     init() {
         apiKey = UserDefaults.standard.string(forKey: Self.apiKeyKey) ?? ""
         let savedLanguage = UserDefaults.standard.string(forKey: Self.deepgramLanguageKey)
         deepgramLanguage = savedLanguage.flatMap(DeepgramLanguage.init(rawValue:)) ?? .automatic
+        let savedLimit = UserDefaults.standard.integer(forKey: Self.historyLimitKey)
+        historyLimit = HistoryLimit(rawValue: savedLimit) ?? .ten
         refreshPermissions()
     }
 
@@ -59,11 +70,65 @@ final class AppState: ObservableObject {
         logs.append(LogEntry(timestamp: Date(), level: level, message: message))
     }
 
+    func addTranscriptToHistory(_ text: String) {
+        guard historyLimit != .none else { return }
+        let entry = TranscriptHistoryEntry(timestamp: Date(), text: text)
+        transcriptHistory.insert(entry, at: 0)
+        applyHistoryLimit()
+    }
+
+    private func applyHistoryLimit() {
+        let max = historyLimit.rawValue
+        if max == 0 {
+            transcriptHistory.removeAll()
+        } else if transcriptHistory.count > max {
+            transcriptHistory.removeLast(transcriptHistory.count - max)
+        }
+    }
+
     func clearLogs() {
         logs.removeAll()
     }
 
     private var transcriptSegments: [String] = []
+}
+
+struct TranscriptHistoryEntry: Identifiable {
+    let id = UUID()
+    let timestamp: Date
+    let text: String
+
+    var displayText: String {
+        let sentences = text.splitIntoSentences()
+        if sentences.count <= 3 { return text }
+        return sentences.prefix(3).joined() + "…"
+    }
+}
+
+enum HistoryLimit: Int, CaseIterable, Identifiable {
+    case none = 0
+    case ten = 10
+    case hundred = 100
+
+    var id: Int { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .none: "None"
+        case .ten: "10"
+        case .hundred: "100"
+        }
+    }
+}
+
+extension String {
+    func splitIntoSentences() -> [String] {
+        var sentences: [String] = []
+        enumerateSubstrings(in: startIndex..., options: .bySentences) { _, range, _, _ in
+            sentences.append(String(self[range]))
+        }
+        return sentences
+    }
 }
 
 enum PermissionStatus: String {

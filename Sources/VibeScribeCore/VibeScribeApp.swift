@@ -227,6 +227,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+        appState.addTranscriptToHistory(text)
         appState.addLog("Transcript copied to clipboard.", level: .info)
 
         if !AXIsProcessTrusted() {

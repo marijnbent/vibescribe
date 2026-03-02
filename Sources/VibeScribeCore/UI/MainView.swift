@@ -8,6 +8,8 @@ struct MainView: View {
         TabView {
             homeTab
                 .tabItem { Text("Home") }
+            historyTab
+                .tabItem { Text("History") }
             logsTab
                 .tabItem { Text("Logs") }
         }
@@ -66,6 +68,57 @@ struct MainView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .padding(.vertical, 6)
+                            Divider()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var historyTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Transcript History")
+                    .font(.headline)
+                Spacer()
+                Picker("Keep", selection: $appState.historyLimit) {
+                    ForEach(HistoryLimit.allCases) { limit in
+                        Text(limit.displayName).tag(limit)
+                    }
+                }
+                .frame(width: 160)
+            }
+
+            if appState.transcriptHistory.isEmpty {
+                Text("No transcriptions yet.")
+                    .foregroundStyle(.secondary)
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(appState.transcriptHistory) { entry in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(alignment: .firstTextBaseline) {
+                                    Text(Self.formatter.string(from: entry.timestamp))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Button {
+                                        let pasteboard = NSPasteboard.general
+                                        pasteboard.clearContents()
+                                        pasteboard.setString(entry.text, forType: .string)
+                                    } label: {
+                                        Image(systemName: "doc.on.doc")
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .font(.caption)
+                                    .help("Copy full transcript")
+                                }
+                                Text(entry.displayText)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .padding(.vertical, 8)
                             Divider()
                         }
                     }
