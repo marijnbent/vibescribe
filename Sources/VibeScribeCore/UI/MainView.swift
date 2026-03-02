@@ -99,7 +99,7 @@ struct MainView: View {
                     }
                 }
             } header: {
-                Text("Transcription")
+                Text("DeepSink")
             } footer: {
                 Text("Automatic detects the spoken language.")
             }
@@ -125,86 +125,77 @@ struct MainView: View {
     }
 
     private var historyTab: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        Form {
             if appState.transcriptHistory.isEmpty {
-                Text("No transcriptions yet.")
-                    .foregroundStyle(.secondary)
-                    .padding()
-                Spacer()
+                Section {
+                    Text("No transcriptions yet.")
+                        .foregroundStyle(.secondary)
+                }
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(appState.transcriptHistory) { entry in
-                            VStack(alignment: .leading, spacing: 6) {
+                Section {
+                    ForEach(appState.transcriptHistory) { entry in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(alignment: .firstTextBaseline) {
                                 Text(Self.formatter.string(from: entry.timestamp))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-
-                                if entry.enhancedText != nil {
-                                    historyRow(label: "Original", text: entry.text, entryID: entry.id)
-                                    historyRow(label: "Enhanced", text: entry.enhancedText!, entryID: entry.id)
-                                } else {
-                                    historyRow(label: nil, text: entry.text, entryID: entry.id)
-                                }
+                                Spacer()
                             }
-                            .padding(.vertical, 8)
-                            Divider()
+
+                            if entry.enhancedText != nil {
+                                historyRow(label: "Original", text: entry.text, entryID: entry.id)
+                                historyRow(label: "Enhanced", text: entry.enhancedText!, entryID: entry.id)
+                            } else {
+                                historyRow(label: nil, text: entry.text, entryID: entry.id)
+                            }
                         }
                     }
-                    .padding(.horizontal)
                 }
             }
         }
+        .formStyle(.grouped)
     }
 
     private var logsTab: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Logs")
-                    .font(.headline)
-                Spacer()
-                Button("Clear") {
-                    appState.clearLogs()
-                }
-            }
-            .padding(.horizontal)
-
+        Form {
             if appState.logs.isEmpty {
-                Text("No logs yet.")
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal)
-                Spacer()
+                Section {
+                    Text("No logs yet.")
+                        .foregroundStyle(.secondary)
+                }
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(appState.logs.reversed()) { entry in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack(alignment: .firstTextBaseline) {
-                                    Text("\(Self.formatter.string(from: entry.timestamp)) \(entry.level.rawValue)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    Button {
-                                        copyLogEntry(entry)
-                                    } label: {
-                                        Image(systemName: "doc.on.doc")
-                                    }
-                                    .buttonStyle(.borderless)
+                Section {
+                    ForEach(appState.logs.reversed()) { entry in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text("\(Self.formatter.string(from: entry.timestamp)) \(entry.level.rawValue)")
                                     .font(.caption)
-                                    .help("Copy log entry")
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button {
+                                    copyLogEntry(entry)
+                                } label: {
+                                    Image(systemName: "doc.on.doc")
                                 }
-                                Text(entry.message)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                .buttonStyle(.borderless)
+                                .font(.caption)
+                                .help("Copy log entry")
                             }
-                            .padding(.vertical, 6)
-                            Divider()
+                            Text(entry.message)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
-                    .padding(.horizontal)
+                } header: {
+                    HStack {
+                        Spacer()
+                        Button("Clear") {
+                            appState.clearLogs()
+                        }
+                    }
                 }
             }
         }
-        .padding(.top)
+        .formStyle(.grouped)
     }
 
     private var aboutTab: some View {
