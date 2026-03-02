@@ -24,13 +24,11 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private var isLatchedRecording = false
     private var didPauseMedia = false
     private var activeShortcutID: UUID?
-    private var shortcutLastKeyDown: [UUID: TimeInterval] = [:]
     private var escGlobalMonitor: Any?
     private var escLocalMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
     private var recordingStartTime: TimeInterval = 0
-    private let minimumHoldDuration: TimeInterval = 0.3
-    private let doubleClickThreshold: TimeInterval = 0.3
+    private let clickHoldThreshold: TimeInterval = 0.2
     private let stopDelay: TimeInterval = 0.2
     private let clipboardRestoreDelay: TimeInterval = 0.2
 
@@ -106,7 +104,6 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             listener.stop()
         }
         hotkeyListeners.removeAll()
-        shortcutLastKeyDown.removeAll()
 
         for shortcut in appState.shortcuts {
             let hotkey = Hotkey(shortcutKey: shortcut.key)
@@ -128,15 +125,13 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     // MARK: - Mode-Based Key Handling
 
     private func handleKeyDown(shortcutID: UUID, mode: ShortcutMode) {
-        let now = CACurrentMediaTime()
-
         switch mode {
         case .hold:
             handleHoldKeyDown(shortcutID: shortcutID)
-        case .doubleClick:
-            handleDoubleClickKeyDown(shortcutID: shortcutID, now: now)
+        case .click:
+            handleClickKeyDown(shortcutID: shortcutID)
         case .both:
-            handleBothKeyDown(shortcutID: shortcutID, now: now)
+            handleBothKeyDown(shortcutID: shortcutID)
         }
     }
 
@@ -144,8 +139,8 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         switch mode {
         case .hold:
             handleHoldKeyUp(shortcutID: shortcutID)
-        case .doubleClick:
-            break // Double click mode does not use key up
+        case .click:
+            break
         case .both:
             handleBothKeyUp(shortcutID: shortcutID)
         }
@@ -162,69 +157,52 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private func handleHoldKeyUp(shortcutID: UUID) {
         guard activeShortcutID == shortcutID else { return }
         let elapsed = CACurrentMediaTime() - recordingStartTime
-        if elapsed < minimumHoldDuration {
+        if elapsed < clickHoldThreshold {
             cancelRecording()
             return
         }
         scheduleStopRecording()
     }
 
-    // MARK: Double Click Mode
+    // MARK: Click Mode
 
-    private func handleDoubleClickKeyDown(shortcutID: UUID, now: TimeInterval) {
-        if isLatchedRecording && activeShortcutID == shortcutID {
-            // Single press while latched → stop
+    private func handleClickKeyDown(shortcutID: UUID) {
+        if appState.isRecording && activeShortcutID == shortcutID {
             isLatchedRecording = false
             stopRecording()
             return
         }
-
-        let lastDown = shortcutLastKeyDown[shortcutID]
-        shortcutLastKeyDown[shortcutID] = now
-
-        if let lastDown, (now - lastDown) <= doubleClickThreshold {
-            // Double click detected → start + latch
-            activeShortcutID = shortcutID
-            isLatchedRecording = true
-            shortcutLastKeyDown[shortcutID] = nil
-            startRecording()
-        }
+        activeShortcutID = shortcutID
+        isLatchedRecording = true
+        startRecording()
     }
 
-    // MARK: Both Mode (Hold + Double Click)
+    // MARK: Both Mode (Hold + Click)
 
-    private func handleBothKeyDown(shortcutID: UUID, now: TimeInterval) {
+    private func handleBothKeyDown(shortcutID: UUID) {
         if isLatchedRecording && activeShortcutID == shortcutID {
-            // Tap while latched → stop
             isLatchedRecording = false
             stopRecording()
             return
         }
 
-        let lastDown = shortcutLastKeyDown[shortcutID]
-        shortcutLastKeyDown[shortcutID] = now
-
-        if appState.isRecording && activeShortcutID == shortcutID {
-            // Already recording (hold in progress) — check for double click to latch
-            if let lastDown, (now - lastDown) <= doubleClickThreshold {
-                cancelPendingStop()
-                isLatchedRecording = true
-                shortcutLastKeyDown[shortcutID] = nil
-            }
-            return
+        if !appState.isRecording {
+            activeShortcutID = shortcutID
+            cancelPendingStop()
+            startRecording()
         }
-
-        // Start recording (for hold)
-        activeShortcutID = shortcutID
-        cancelPendingStop()
-        startRecording()
     }
 
     private func handleBothKeyUp(shortcutID: UUID) {
         guard activeShortcutID == shortcutID else { return }
         if isLatchedRecording { return }
         guard appState.isRecording else { return }
-        scheduleStopRecording()
+        let elapsed = CACurrentMediaTime() - recordingStartTime
+        if elapsed < clickHoldThreshold {
+            isLatchedRecording = true
+        } else {
+            scheduleStopRecording()
+        }
     }
 
     // MARK: - Audio Input Change
@@ -305,7 +283,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         appState.statusMessage = "Finalizing..."
 
         let shortcutID = activeShortcutID
-        let hasEnhancement = shortcutID.flatMap { appState.enhancementPrompts[$0] } != nil
+        let hasEnhancement = shortcutID.flatMap { appState.promptContent(forShortcutID: $0) } != nil
 
         if hasEnhancement {
             appState.overlayLabel = "Enhancing"
@@ -445,7 +423,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         var enhancedText: String?
         var enhancementFailed = false
         if let shortcutID,
-           let prompt = appState.enhancementPrompts[shortcutID] {
+           let prompt = appState.promptContent(forShortcutID: shortcutID) {
             if !appState.hasOpenRouterCredentials {
                 let missing = appState.openRouterApiKey.trimmed.isEmpty ? "API key" : "model"
                 appState.statusMessage = "Enhancement skipped: missing \(missing)."

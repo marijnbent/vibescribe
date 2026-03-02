@@ -94,7 +94,7 @@ final class AppStateTests: XCTestCase {
         let id = state.shortcuts[0].id
         state.shortcuts[0].key = .fn
         state.shortcuts[0].mode = .hold
-        state.shortcuts.append(ShortcutConfig(id: UUID(), key: .leftControl, mode: .doubleClick))
+        state.shortcuts.append(ShortcutConfig(id: UUID(), key: .leftControl, mode: .click))
 
         let restored = AppState()
         XCTAssertEqual(restored.shortcuts.count, 2)
@@ -102,7 +102,7 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(restored.shortcuts[0].key, .fn)
         XCTAssertEqual(restored.shortcuts[0].mode, .hold)
         XCTAssertEqual(restored.shortcuts[1].key, .leftControl)
-        XCTAssertEqual(restored.shortcuts[1].mode, .doubleClick)
+        XCTAssertEqual(restored.shortcuts[1].mode, .click)
     }
 
     func testShortcutsEmptyArrayFallsBackToDefault() {

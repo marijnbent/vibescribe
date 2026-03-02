@@ -52,7 +52,7 @@ final class ShortcutConfigTests: XCTestCase {
 
     func testShortcutModeDisplayNames() {
         XCTAssertEqual(ShortcutMode.hold.displayName, "Hold")
-        XCTAssertEqual(ShortcutMode.doubleClick.displayName, "Double Click")
+        XCTAssertEqual(ShortcutMode.click.displayName, "Click")
         XCTAssertEqual(ShortcutMode.both.displayName, "Both")
     }
 
@@ -74,12 +74,19 @@ final class ShortcutConfigTests: XCTestCase {
         }
     }
 
+    func testShortcutModeDoubleClickMigratesToClick() throws {
+        let json = Data(#""doubleClick""#.utf8)
+        let decoded = try JSONDecoder().decode(ShortcutMode.self, from: json)
+        XCTAssertEqual(decoded, .click)
+    }
+
     // MARK: - ShortcutConfig
 
     func testMakeDefault() {
         let config = ShortcutConfig.makeDefault()
         XCTAssertEqual(config.key, .rightOption)
         XCTAssertEqual(config.mode, .both)
+        XCTAssertNil(config.promptID)
     }
 
     func testMakeDefaultGeneratesUniqueIDs() {
@@ -89,21 +96,57 @@ final class ShortcutConfigTests: XCTestCase {
     }
 
     func testShortcutConfigCodableRoundTrip() throws {
-        let config = ShortcutConfig(id: UUID(), key: .leftControl, mode: .doubleClick)
+        let config = ShortcutConfig(id: UUID(), key: .leftControl, mode: .click)
         let data = try JSONEncoder().encode(config)
         let decoded = try JSONDecoder().decode(ShortcutConfig.self, from: data)
         XCTAssertEqual(decoded, config)
+    }
+
+    func testShortcutConfigPromptIDRoundTrip() throws {
+        let promptID = UUID()
+        let config = ShortcutConfig(id: UUID(), key: .rightOption, mode: .both, promptID: promptID)
+        let data = try JSONEncoder().encode(config)
+        let decoded = try JSONDecoder().decode(ShortcutConfig.self, from: data)
+        XCTAssertEqual(decoded.promptID, promptID)
+    }
+
+    func testShortcutConfigNilPromptIDRoundTrip() throws {
+        let config = ShortcutConfig(id: UUID(), key: .fn, mode: .hold)
+        let data = try JSONEncoder().encode(config)
+        let decoded = try JSONDecoder().decode(ShortcutConfig.self, from: data)
+        XCTAssertNil(decoded.promptID)
+    }
+
+    func testShortcutConfigOldFormatWithoutPromptIDDecodes() throws {
+        let id = UUID()
+        let json = """
+        {"id":"\(id.uuidString)","key":"fn","mode":"hold"}
+        """
+        let decoded = try JSONDecoder().decode(ShortcutConfig.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.id, id)
+        XCTAssertEqual(decoded.key, .fn)
+        XCTAssertEqual(decoded.mode, .hold)
+        XCTAssertNil(decoded.promptID)
     }
 
     func testShortcutConfigArrayCodableRoundTrip() throws {
         let configs = [
             ShortcutConfig(id: UUID(), key: .rightOption, mode: .both),
             ShortcutConfig(id: UUID(), key: .fn, mode: .hold),
-            ShortcutConfig(id: UUID(), key: .leftCommand, mode: .doubleClick),
+            ShortcutConfig(id: UUID(), key: .leftCommand, mode: .click),
         ]
         let data = try JSONEncoder().encode(configs)
         let decoded = try JSONDecoder().decode([ShortcutConfig].self, from: data)
         XCTAssertEqual(decoded, configs)
+    }
+
+    func testShortcutConfigDoubleClickMigration() throws {
+        let id = UUID()
+        let json = """
+        {"id":"\(id.uuidString)","key":"leftCommand","mode":"doubleClick"}
+        """
+        let decoded = try JSONDecoder().decode(ShortcutConfig.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.mode, .click)
     }
 
     func testShortcutConfigEquality() {
@@ -112,7 +155,28 @@ final class ShortcutConfigTests: XCTestCase {
         let b = ShortcutConfig(id: id, key: .fn, mode: .hold)
         XCTAssertEqual(a, b)
 
-        let c = ShortcutConfig(id: id, key: .fn, mode: .doubleClick)
+        let c = ShortcutConfig(id: id, key: .fn, mode: .click)
         XCTAssertNotEqual(a, c)
+    }
+
+    // MARK: - PromptConfig
+
+    func testPromptConfigMakeDefault() {
+        let prompt = PromptConfig.makeDefault()
+        XCTAssertEqual(prompt.name, "Clean up")
+        XCTAssertFalse(prompt.content.isEmpty)
+    }
+
+    func testPromptConfigMakeDefaultGeneratesUniqueIDs() {
+        let a = PromptConfig.makeDefault()
+        let b = PromptConfig.makeDefault()
+        XCTAssertNotEqual(a.id, b.id)
+    }
+
+    func testPromptConfigCodableRoundTrip() throws {
+        let prompt = PromptConfig(id: UUID(), name: "Test", content: "Do stuff")
+        let data = try JSONEncoder().encode(prompt)
+        let decoded = try JSONDecoder().decode(PromptConfig.self, from: data)
+        XCTAssertEqual(decoded, prompt)
     }
 }

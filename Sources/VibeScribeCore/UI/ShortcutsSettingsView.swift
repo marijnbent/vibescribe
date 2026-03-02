@@ -11,9 +11,10 @@ struct ShortcutsSettingsView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach($appState.shortcuts) { $shortcut in
+                        let usedKeys = Set(appState.shortcuts.filter { $0.id != shortcut.id }.map(\.key))
                         HStack(spacing: 12) {
                             Picker("Key", selection: $shortcut.key) {
-                                ForEach(ShortcutKey.allCases) { key in
+                                ForEach(ShortcutKey.allCases.filter { $0 == shortcut.key || !usedKeys.contains($0) }) { key in
                                     Text(key.displayName).tag(key)
                                 }
                             }
@@ -44,17 +45,21 @@ struct ShortcutsSettingsView: View {
                     Text("Shortcuts")
                     Spacer()
                     Button {
-                        appState.shortcuts.append(ShortcutConfig.makeDefault())
+                        let usedKeys = Set(appState.shortcuts.map(\.key))
+                        if let nextKey = ShortcutKey.allCases.first(where: { !usedKeys.contains($0) }) {
+                            appState.shortcuts.append(ShortcutConfig(id: UUID(), key: nextKey, mode: .both))
+                        }
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .disabled(appState.shortcuts.count >= ShortcutKey.allCases.count)
                     .help("Add shortcut")
                 }
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Hold — push-to-talk. Press and hold to record, release to stop.")
-                    Text("Double Click — double-press to start, single press to stop.")
-                    Text("Both — hold to record, or double-press to latch on and tap to stop.")
+                    Text("Click — press to start, press again to stop.")
+                    Text("Both — hold to record, or quick-press to latch on and press to stop.")
                 }
             }
         }

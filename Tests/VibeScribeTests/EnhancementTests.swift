@@ -6,6 +6,7 @@ final class EnhancementTests: XCTestCase {
     private let openRouterApiKeyKey = "VibeScribe.OpenRouterApiKey"
     private let openRouterModelKey = "VibeScribe.OpenRouterModel"
     private let enhancementPromptsKey = "VibeScribe.EnhancementPrompts"
+    private let promptsKey = "VibeScribe.Prompts"
     private let shortcutsKey = "VibeScribe.Shortcuts"
 
     override func setUp() {
@@ -13,6 +14,7 @@ final class EnhancementTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: openRouterApiKeyKey)
         UserDefaults.standard.removeObject(forKey: openRouterModelKey)
         UserDefaults.standard.removeObject(forKey: enhancementPromptsKey)
+        UserDefaults.standard.removeObject(forKey: promptsKey)
         UserDefaults.standard.removeObject(forKey: shortcutsKey)
     }
 
@@ -20,6 +22,7 @@ final class EnhancementTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: openRouterApiKeyKey)
         UserDefaults.standard.removeObject(forKey: openRouterModelKey)
         UserDefaults.standard.removeObject(forKey: enhancementPromptsKey)
+        UserDefaults.standard.removeObject(forKey: promptsKey)
         UserDefaults.standard.removeObject(forKey: shortcutsKey)
         super.tearDown()
     }
@@ -83,47 +86,93 @@ final class EnhancementTests: XCTestCase {
         XCTAssertEqual(restored.openRouterModel, "anthropic/claude-3")
     }
 
-    // MARK: - Enhancement Prompts
+    // MARK: - Named Prompts
 
-    func testEnhancementPromptsDefaultToEmpty() {
+    func testPromptsDefaultToEmpty() {
         let state = AppState()
-        XCTAssertTrue(state.enhancementPrompts.isEmpty)
+        XCTAssertTrue(state.prompts.isEmpty)
     }
 
-    func testEnhancementPromptsPersist() {
-        let id = UUID()
-        let prompt = "fix grammar"
-
+    func testPromptsPersist() {
         let state = AppState()
-        state.enhancementPrompts[id] = prompt
+        let prompt = PromptConfig(id: UUID(), name: "Fix grammar", content: "fix grammar")
+        state.prompts.append(prompt)
 
         let restored = AppState()
-        XCTAssertEqual(restored.enhancementPrompts[id], prompt)
+        XCTAssertEqual(restored.prompts.count, 1)
+        XCTAssertEqual(restored.prompts[0].name, "Fix grammar")
+        XCTAssertEqual(restored.prompts[0].content, "fix grammar")
     }
 
-    func testEnhancementPromptsMultipleShortcuts() {
-        let id1 = UUID()
-        let id2 = UUID()
-
+    func testDeletePromptRemovesPrompt() {
         let state = AppState()
-        state.enhancementPrompts[id1] = "prompt one"
-        state.enhancementPrompts[id2] = "prompt two"
+        let prompt = PromptConfig(id: UUID(), name: "Test", content: "test")
+        state.prompts.append(prompt)
+        state.deletePrompt(id: prompt.id)
 
-        let restored = AppState()
-        XCTAssertEqual(restored.enhancementPrompts.count, 2)
-        XCTAssertEqual(restored.enhancementPrompts[id1], "prompt one")
-        XCTAssertEqual(restored.enhancementPrompts[id2], "prompt two")
+        XCTAssertTrue(state.prompts.isEmpty)
     }
 
-    func testRemovingEnhancementPromptPersists() {
-        let id = UUID()
-
+    func testDeletePromptClearsShortcutReferences() {
         let state = AppState()
-        state.enhancementPrompts[id] = "will be removed"
-        state.enhancementPrompts.removeValue(forKey: id)
+        let prompt = PromptConfig(id: UUID(), name: "Test", content: "test")
+        state.prompts.append(prompt)
+        state.shortcuts[0].promptID = prompt.id
 
-        let restored = AppState()
-        XCTAssertNil(restored.enhancementPrompts[id])
+        state.deletePrompt(id: prompt.id)
+        XCTAssertNil(state.shortcuts[0].promptID)
+    }
+
+    func testPromptContentForShortcutID() {
+        let state = AppState()
+        let prompt = PromptConfig(id: UUID(), name: "Test", content: "do the thing")
+        state.prompts.append(prompt)
+        state.shortcuts[0].promptID = prompt.id
+
+        XCTAssertEqual(state.promptContent(forShortcutID: state.shortcuts[0].id), "do the thing")
+    }
+
+    func testPromptContentForShortcutIDReturnsNilWithNoPromptID() {
+        let state = AppState()
+        XCTAssertNil(state.promptContent(forShortcutID: state.shortcuts[0].id))
+    }
+
+    func testPromptContentForShortcutIDReturnsNilForDeletedPrompt() {
+        let state = AppState()
+        state.shortcuts[0].promptID = UUID() // points to nonexistent prompt
+        XCTAssertNil(state.promptContent(forShortcutID: state.shortcuts[0].id))
+    }
+
+    // MARK: - Migration from old enhancementPrompts
+
+    func testMigrationFromOldEnhancementPrompts() {
+        // Seed old-format data
+        let state1 = AppState()
+        let shortcutID = state1.shortcuts[0].id
+
+        let oldPrompts: [String: String] = [shortcutID.uuidString: "old prompt content"]
+        let data = try! JSONEncoder().encode(oldPrompts)
+        UserDefaults.standard.set(data, forKey: enhancementPromptsKey)
+        // Remove new-format key so migration triggers
+        UserDefaults.standard.removeObject(forKey: promptsKey)
+
+        // Re-seed shortcuts so the shortcut ID matches
+        let shortcutData = try! JSONEncoder().encode(state1.shortcuts)
+        UserDefaults.standard.set(shortcutData, forKey: shortcutsKey)
+
+        let state2 = AppState()
+        XCTAssertEqual(state2.prompts.count, 1)
+        XCTAssertEqual(state2.prompts[0].content, "old prompt content")
+        XCTAssertEqual(state2.shortcuts[0].promptID, state2.prompts[0].id)
+        // Old key should be cleaned up
+        XCTAssertNil(UserDefaults.standard.data(forKey: enhancementPromptsKey))
+    }
+
+    // MARK: - Default Prompt
+
+    func testDefaultPromptIsNotEmpty() {
+        let prompt = PromptConfig.makeDefault()
+        XCTAssertFalse(prompt.content.isEmpty)
     }
 
     // MARK: - OpenRouterError
@@ -143,41 +192,27 @@ final class EnhancementTests: XCTestCase {
         XCTAssertEqual(error.errorDescription, "OpenRouter returned no content.")
     }
 
-    // MARK: - Default Prompt
-
-    func testDefaultPromptIsNotEmpty() {
-        XCTAssertFalse(EnhancementsSettingsView.defaultPrompt.isEmpty)
-    }
-
-    func testEnablingEnhancementSetsDefaultPrompt() {
-        let state = AppState()
-        let id = state.shortcuts[0].id
-        state.enhancementPrompts[id] = EnhancementsSettingsView.defaultPrompt
-
-        XCTAssertEqual(state.enhancementPrompts[id], EnhancementsSettingsView.defaultPrompt)
-    }
-
     // MARK: - Missing Credentials with Enhancement Enabled
 
     func testEnhancementEnabledButMissingApiKeyLogsWarning() {
         let state = AppState()
-        let id = state.shortcuts[0].id
-        state.enhancementPrompts[id] = "fix it"
+        let prompt = PromptConfig(id: UUID(), name: "Fix", content: "fix it")
+        state.prompts.append(prompt)
+        state.shortcuts[0].promptID = prompt.id
         state.openRouterModel = "openai/gpt-4o-mini"
-        // No API key set
 
-        XCTAssertNotNil(state.enhancementPrompts[id])
+        XCTAssertNotNil(state.promptContent(forShortcutID: state.shortcuts[0].id))
         XCTAssertFalse(state.hasOpenRouterCredentials)
     }
 
     func testEnhancementEnabledButMissingModelLogsWarning() {
         let state = AppState()
-        let id = state.shortcuts[0].id
-        state.enhancementPrompts[id] = "fix it"
+        let prompt = PromptConfig(id: UUID(), name: "Fix", content: "fix it")
+        state.prompts.append(prompt)
+        state.shortcuts[0].promptID = prompt.id
         state.openRouterApiKey = "sk-test"
-        // No model set
 
-        XCTAssertNotNil(state.enhancementPrompts[id])
+        XCTAssertNotNil(state.promptContent(forShortcutID: state.shortcuts[0].id))
         XCTAssertFalse(state.hasOpenRouterCredentials)
     }
 }

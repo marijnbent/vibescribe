@@ -44,7 +44,7 @@ enum ShortcutKey: String, Codable, CaseIterable, Identifiable {
 
 enum ShortcutMode: String, Codable, CaseIterable, Identifiable {
     case hold
-    case doubleClick
+    case click
     case both
 
     var id: String { rawValue }
@@ -52,8 +52,20 @@ enum ShortcutMode: String, Codable, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .hold: return "Hold"
-        case .doubleClick: return "Double Click"
+        case .click: return "Click"
         case .both: return "Both"
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        if raw == "doubleClick" {
+            self = .click
+        } else if let value = ShortcutMode(rawValue: raw) {
+            self = value
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown ShortcutMode: \(raw)")
         }
     }
 }
@@ -62,8 +74,33 @@ struct ShortcutConfig: Codable, Identifiable, Equatable {
     var id: UUID
     var key: ShortcutKey
     var mode: ShortcutMode
+    var promptID: UUID?
 
     static func makeDefault() -> ShortcutConfig {
         ShortcutConfig(id: UUID(), key: .rightOption, mode: .both)
+    }
+}
+
+struct PromptConfig: Codable, Identifiable, Equatable {
+    var id: UUID
+    var name: String
+    var content: String
+
+    static func makeDefault() -> PromptConfig {
+        PromptConfig(
+            id: UUID(),
+            name: "Clean up",
+            content: """
+            Clean up the following transcription. Fix spelling, grammar, punctuation, and formatting only. \
+            Do not change, remove, or rephrase any of the original words or meaning. Keep the speaker's \
+            voice and intent exactly as-is.
+
+            Remove filler words (um, uh, you know) and false starts only when they add no meaning. \
+            Add paragraph breaks where topics shift naturally.
+
+            Return only the cleaned transcription as plain text. No explanations, no quotes, no HTML tags, \
+            no markdown, no preamble, no closing remarks. Just the text.
+            """
+        )
     }
 }

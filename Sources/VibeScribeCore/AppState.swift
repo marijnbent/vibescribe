@@ -13,6 +13,7 @@ final class AppState: ObservableObject {
     private static let openRouterApiKeyKey = "VibeScribe.OpenRouterApiKey"
     private static let openRouterModelKey = "VibeScribe.OpenRouterModel"
     private static let enhancementPromptsKey = "VibeScribe.EnhancementPrompts"
+    private static let promptsKey = "VibeScribe.Prompts"
     private static let escToCancelRecordingKey = "VibeScribe.EscToCancelRecording"
     private static let playSoundEffectsKey = "VibeScribe.PlaySoundEffects"
     private static let pauseMediaDuringRecordingKey = "VibeScribe.PauseMediaDuringRecording"
@@ -57,11 +58,10 @@ final class AppState: ObservableObject {
         }
     }
 
-    @Published var enhancementPrompts: [UUID: String] {
+    @Published var prompts: [PromptConfig] {
         didSet {
-            let stringKeyed = Dictionary(uniqueKeysWithValues: enhancementPrompts.map { ($0.key.uuidString, $0.value) })
-            if let data = try? JSONEncoder().encode(stringKeyed) {
-                UserDefaults.standard.set(data, forKey: Self.enhancementPromptsKey)
+            if let data = try? JSONEncoder().encode(prompts) {
+                UserDefaults.standard.set(data, forKey: Self.promptsKey)
             }
         }
     }
@@ -122,17 +122,28 @@ final class AppState: ObservableObject {
         openRouterApiKey = UserDefaults.standard.string(forKey: Self.openRouterApiKeyKey) ?? ""
         openRouterModel = UserDefaults.standard.string(forKey: Self.openRouterModelKey) ?? ""
 
-        if let data = UserDefaults.standard.data(forKey: Self.enhancementPromptsKey),
+        if let data = UserDefaults.standard.data(forKey: Self.promptsKey),
+           let decoded = try? JSONDecoder().decode([PromptConfig].self, from: data) {
+            prompts = decoded
+        } else {
+            prompts = []
+        }
+
+        // Migrate old per-shortcut enhancementPrompts → named PromptConfig
+        if prompts.isEmpty,
+           let data = UserDefaults.standard.data(forKey: Self.enhancementPromptsKey),
            let stringKeyed = try? JSONDecoder().decode([String: String].self, from: data) {
-            var prompts: [UUID: String] = [:]
+            var migrated: [PromptConfig] = []
             for (key, value) in stringKeyed {
-                if let uuid = UUID(uuidString: key) {
-                    prompts[uuid] = value
+                guard let shortcutUUID = UUID(uuidString: key) else { continue }
+                let prompt = PromptConfig(id: UUID(), name: "Migrated", content: value)
+                migrated.append(prompt)
+                if let idx = shortcuts.firstIndex(where: { $0.id == shortcutUUID }) {
+                    shortcuts[idx].promptID = prompt.id
                 }
             }
-            enhancementPrompts = prompts
-        } else {
-            enhancementPrompts = [:]
+            prompts = migrated
+            UserDefaults.standard.removeObject(forKey: Self.enhancementPromptsKey)
         }
 
         refreshPermissions()
@@ -177,6 +188,22 @@ final class AppState: ObservableObject {
 
     func clearLogs() {
         logs.removeAll()
+    }
+
+    func deletePrompt(id: UUID) {
+        prompts.removeAll { $0.id == id }
+        for i in shortcuts.indices where shortcuts[i].promptID == id {
+            shortcuts[i].promptID = nil
+        }
+    }
+
+    func promptContent(forShortcutID shortcutID: UUID) -> String? {
+        guard let shortcut = shortcuts.first(where: { $0.id == shortcutID }),
+              let promptID = shortcut.promptID,
+              let prompt = prompts.first(where: { $0.id == promptID }) else {
+            return nil
+        }
+        return prompt.content
     }
 
     private var transcriptSegments: [String] = []
