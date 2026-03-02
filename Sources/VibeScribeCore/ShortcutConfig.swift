@@ -77,7 +77,7 @@ struct ShortcutConfig: Codable, Identifiable, Equatable {
     var promptID: UUID?
 
     static func makeDefault() -> ShortcutConfig {
-        ShortcutConfig(id: UUID(), key: .rightOption, mode: .both)
+        ShortcutConfig(id: UUID(), key: .rightOption, mode: .hold)
     }
 }
 

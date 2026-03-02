@@ -67,7 +67,14 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             .store(in: &cancellables)
 
         menuBarController = MenuBarController(
-            onOpenMain: { [weak self] in self?.mainWindowController.show() },
+            onOpenMain: { [weak self] in
+                self?.appState.selectedTab = .general
+                self?.mainWindowController.show()
+            },
+            onOpenHistory: { [weak self] in
+                self?.appState.selectedTab = .history
+                self?.mainWindowController.show()
+            },
             onQuit: { NSApp.terminate(nil) }
         )
 
