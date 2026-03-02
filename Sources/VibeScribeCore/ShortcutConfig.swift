@@ -57,17 +57,6 @@ enum ShortcutMode: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        let raw = try container.decode(String.self)
-        if raw == "doubleClick" {
-            self = .click
-        } else if let value = ShortcutMode(rawValue: raw) {
-            self = value
-        } else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown ShortcutMode: \(raw)")
-        }
-    }
 }
 
 struct ShortcutConfig: Codable, Identifiable, Equatable {

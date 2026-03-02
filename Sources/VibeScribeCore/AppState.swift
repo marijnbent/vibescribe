@@ -12,7 +12,6 @@ final class AppState: ObservableObject {
     private static let shortcutsKey = "VibeScribe.Shortcuts"
     private static let openRouterApiKeyKey = "VibeScribe.OpenRouterApiKey"
     private static let openRouterModelKey = "VibeScribe.OpenRouterModel"
-    private static let enhancementPromptsKey = "VibeScribe.EnhancementPrompts"
     private static let promptsKey = "VibeScribe.Prompts"
     private static let escToCancelRecordingKey = "VibeScribe.EscToCancelRecording"
     private static let playSoundEffectsKey = "VibeScribe.PlaySoundEffects"
@@ -127,23 +126,6 @@ final class AppState: ObservableObject {
             prompts = decoded
         } else {
             prompts = []
-        }
-
-        // Migrate old per-shortcut enhancementPrompts → named PromptConfig
-        if prompts.isEmpty,
-           let data = UserDefaults.standard.data(forKey: Self.enhancementPromptsKey),
-           let stringKeyed = try? JSONDecoder().decode([String: String].self, from: data) {
-            var migrated: [PromptConfig] = []
-            for (key, value) in stringKeyed {
-                guard let shortcutUUID = UUID(uuidString: key) else { continue }
-                let prompt = PromptConfig(id: UUID(), name: "Migrated", content: value)
-                migrated.append(prompt)
-                if let idx = shortcuts.firstIndex(where: { $0.id == shortcutUUID }) {
-                    shortcuts[idx].promptID = prompt.id
-                }
-            }
-            prompts = migrated
-            UserDefaults.standard.removeObject(forKey: Self.enhancementPromptsKey)
         }
 
         refreshPermissions()

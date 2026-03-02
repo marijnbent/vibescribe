@@ -74,12 +74,6 @@ final class ShortcutConfigTests: XCTestCase {
         }
     }
 
-    func testShortcutModeDoubleClickMigratesToClick() throws {
-        let json = Data(#""doubleClick""#.utf8)
-        let decoded = try JSONDecoder().decode(ShortcutMode.self, from: json)
-        XCTAssertEqual(decoded, .click)
-    }
-
     // MARK: - ShortcutConfig
 
     func testMakeDefault() {
