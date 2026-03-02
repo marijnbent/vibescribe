@@ -99,7 +99,7 @@ struct MainView: View {
                     }
                 }
             } header: {
-                Text("DeepSink")
+                Text("Deepgram")
             } footer: {
                 Text("Automatic detects the spoken language.")
             }
