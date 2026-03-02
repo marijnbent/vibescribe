@@ -160,6 +160,11 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
     private func handleHoldKeyUp(shortcutID: UUID) {
         guard activeShortcutID == shortcutID else { return }
+        let elapsed = CACurrentMediaTime() - recordingStartTime
+        if elapsed < minimumHoldDuration {
+            cancelRecording()
+            return
+        }
         scheduleStopRecording()
     }
 
@@ -312,11 +317,6 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     }
 
     private func scheduleStopRecording() {
-        let elapsed = CACurrentMediaTime() - recordingStartTime
-        if elapsed < minimumHoldDuration {
-            cancelRecording()
-            return
-        }
         cancelPendingStop()
         let workItem = DispatchWorkItem { [weak self] in
             self?.stopRecording()
