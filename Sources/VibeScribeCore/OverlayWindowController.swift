@@ -74,7 +74,7 @@ final class OverlayWindowController {
         let hosting = NSHostingController(rootView: overlayView)
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 180, height: 32),
+            contentRect: NSRect(x: 0, y: 0, width: 90, height: 32),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -102,7 +102,7 @@ final class OverlayWindowController {
     private func targetFrame(screen: NSScreen) -> CGRect {
         let fullFrame = screen.frame
         let visibleFrame = screen.visibleFrame
-        let width = min(180, fullFrame.width - 80)
+        let width = min(90, fullFrame.width - 80)
         let height: CGFloat = 32
         let x = fullFrame.midX - width / 2
         let y: CGFloat

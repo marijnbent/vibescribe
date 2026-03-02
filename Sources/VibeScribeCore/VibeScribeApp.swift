@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import AVFoundation
 import Carbon
 import Combine
 import SwiftUI
@@ -257,6 +258,10 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
             audioCapture.onBuffer = { [weak self] buffer in
                 self?.deepgramClient.sendAudio(buffer: buffer)
+                let level = rmsLevel(from: buffer)
+                Task { @MainActor in
+                    self?.appState.audioLevel = level
+                }
             }
 
             recordingStartTime = CACurrentMediaTime()
@@ -287,6 +292,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         isLatchedRecording = false
         audioCapture.stop()
         appState.isRecording = false
+        appState.audioLevel = 0
         appState.statusMessage = "Finalizing..."
 
         if didPauseMedia {
@@ -344,6 +350,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             didPauseMedia = false
         }
         appState.isRecording = false
+        appState.audioLevel = 0
         appState.overlayVisible = false
         overlayWindowController.hide()
         playSound("Pop")
@@ -504,6 +511,20 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         appState.overlayVisible = false
         overlayWindowController.hide()
     }
+}
+
+private func rmsLevel(from buffer: AVAudioPCMBuffer) -> CGFloat {
+    guard let channelData = buffer.floatChannelData else { return 0 }
+    let frameLength = Int(buffer.frameLength)
+    guard frameLength > 0 else { return 0 }
+    let samples = channelData[0]
+    var sum: Float = 0
+    for i in 0..<frameLength {
+        let s = samples[i]
+        sum += s * s
+    }
+    let rms = sqrt(sum / Float(frameLength))
+    return CGFloat(min(1, sqrt(rms) * 3.5))
 }
 
 private struct PasteboardSnapshot {
