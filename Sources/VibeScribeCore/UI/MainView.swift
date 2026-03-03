@@ -209,7 +209,7 @@ struct MainView: View {
                 .fontWeight(.semibold)
             Text("Voice-to-text for macOS")
                 .foregroundStyle(.secondary)
-            Link("GitHub", destination: URL(string: "https://github.com/nicktmro/vibescribe")!)
+            Link("GitHub", destination: URL(string: "https://github.com/flatoy/vibescribe")!)
                 .foregroundStyle(.tint)
             Spacer()
         }
