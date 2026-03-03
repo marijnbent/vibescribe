@@ -15,7 +15,7 @@ final class AppState: ObservableObject {
     private static let promptsKey = "VibeScribe.Prompts"
     private static let escToCancelRecordingKey = "VibeScribe.EscToCancelRecording"
     private static let playSoundEffectsKey = "VibeScribe.PlaySoundEffects"
-    private static let pauseMediaDuringRecordingKey = "VibeScribe.PauseMediaDuringRecording"
+    private static let muteMediaDuringRecordingKey = "VibeScribe.MuteMediaDuringRecording"
     private static let accessibilityPromptDelayNanoseconds: UInt64 = 500_000_000
 
     @Published var isRecording = false
@@ -81,9 +81,9 @@ final class AppState: ObservableObject {
         }
     }
 
-    @Published var pauseMediaDuringRecording: Bool {
+    @Published var muteMediaDuringRecording: Bool {
         didSet {
-            UserDefaults.standard.set(pauseMediaDuringRecording, forKey: Self.pauseMediaDuringRecordingKey)
+            UserDefaults.standard.set(muteMediaDuringRecording, forKey: Self.muteMediaDuringRecordingKey)
         }
     }
 
@@ -104,7 +104,7 @@ final class AppState: ObservableObject {
         apiKey = UserDefaults.standard.string(forKey: Self.apiKeyKey) ?? ""
         escToCancelRecording = (UserDefaults.standard.object(forKey: Self.escToCancelRecordingKey) as? Bool) ?? true
         playSoundEffects = (UserDefaults.standard.object(forKey: Self.playSoundEffectsKey) as? Bool) ?? false
-        pauseMediaDuringRecording = (UserDefaults.standard.object(forKey: Self.pauseMediaDuringRecordingKey) as? Bool) ?? false
+        muteMediaDuringRecording = (UserDefaults.standard.object(forKey: Self.muteMediaDuringRecordingKey) as? Bool) ?? false
         let savedLanguage = UserDefaults.standard.string(forKey: Self.deepgramLanguageKey)
         deepgramLanguage = savedLanguage.flatMap(DeepgramLanguage.init(rawValue:)) ?? .automatic
         let savedLimit = UserDefaults.standard.integer(forKey: Self.historyLimitKey)

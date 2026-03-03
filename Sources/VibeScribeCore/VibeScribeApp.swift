@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import Carbon
 import Combine
+import CoreAudio
 import SwiftUI
 
 @MainActor
@@ -22,7 +23,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private var deepgramClient: DeepgramClient!
     private var stopWorkItem: DispatchWorkItem?
     private var isLatchedRecording = false
-    private var didPauseMedia = false
+    private var savedMuteState: Bool?
     private var activeShortcutID: UUID?
     private var escGlobalMonitor: Any?
     private var escLocalMonitor: Any?
@@ -224,10 +225,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         cancelPendingStop()
         isLatchedRecording = false
         activeShortcutID = nil
-        if didPauseMedia {
-            sendMediaPlayPauseKey()
-            didPauseMedia = false
-        }
+        restoreMute()
         deepgramClient.disconnect()
         appState.isRecording = false
         appState.overlayVisible = false
@@ -266,9 +264,8 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             appState.statusMessage = "Listening..."
             overlayWindowController.show()
             playSound("Tink")
-            if appState.pauseMediaDuringRecording {
-                sendMediaPlayPauseKey()
-                didPauseMedia = true
+            if appState.muteMediaDuringRecording {
+                muteForRecording()
             }
             appState.addLog("Language: \(appState.deepgramLanguage.displayName) (\(appState.deepgramLanguage.deepgramCode)).", level: .info)
             appState.addLog("Listening started.", level: .info)
@@ -289,10 +286,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         appState.isRecording = false
         appState.statusMessage = "Finalizing..."
 
-        if didPauseMedia {
-            sendMediaPlayPauseKey()
-            didPauseMedia = false
-        }
+        restoreMute()
 
         let shortcutID = activeShortcutID
         let hasEnhancement = shortcutID.flatMap { appState.promptContent(forShortcutID: $0) } != nil
@@ -339,10 +333,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         deepgramClient.disconnect()
         isLatchedRecording = false
         activeShortcutID = nil
-        if didPauseMedia {
-            sendMediaPlayPauseKey()
-            didPauseMedia = false
-        }
+        restoreMute()
         appState.isRecording = false
         appState.overlayVisible = false
         overlayWindowController.hide()
@@ -387,20 +378,54 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
     // MARK: - Media Control
 
-    private func sendMediaPlayPauseKey() {
-        func post(down: Bool) {
-            let flags = down ? 0xa00 : 0xb00
-            let data1 = Int((16 << 16) | (down ? 0xa << 8 : 0xb << 8))
-            let event = NSEvent.otherEvent(
-                with: .systemDefined, location: .zero,
-                modifierFlags: NSEvent.ModifierFlags(rawValue: UInt(flags)),
-                timestamp: 0, windowNumber: 0, context: nil,
-                subtype: 8, data1: data1, data2: -1
-            )
-            event?.cgEvent?.post(tap: .cghidEventTap)
-        }
-        post(down: true)
-        post(down: false)
+    private func defaultOutputDevice() -> AudioDeviceID? {
+        var deviceID = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceID
+        ) == noErr else { return nil }
+        return deviceID
+    }
+
+    private func setSystemMute(_ mute: Bool) {
+        guard let device = defaultOutputDevice() else { return }
+        var value: UInt32 = mute ? 1 : 0
+        let size = UInt32(MemoryLayout<UInt32>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyMute,
+            mScope: kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        AudioObjectSetPropertyData(device, &address, 0, nil, size, &value)
+    }
+
+    private func isSystemMuted() -> Bool {
+        guard let device = defaultOutputDevice() else { return false }
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyMute,
+            mScope: kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value)
+        return value != 0
+    }
+
+    private func muteForRecording() {
+        savedMuteState = isSystemMuted()
+        setSystemMute(true)
+    }
+
+    private func restoreMute() {
+        guard let wasMuted = savedMuteState else { return }
+        savedMuteState = nil
+        setSystemMute(wasMuted)
     }
 
     // MARK: - Sound Effects

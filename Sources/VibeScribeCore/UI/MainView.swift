@@ -107,7 +107,7 @@ struct MainView: View {
             Section("Behavior") {
                 Toggle("Cancel recording with Escape", isOn: $appState.escToCancelRecording)
                 Toggle("Play sound effects", isOn: $appState.playSoundEffects)
-                Toggle("Pause media during recording", isOn: $appState.pauseMediaDuringRecording)
+                Toggle("Mute during recording", isOn: $appState.muteMediaDuringRecording)
             }
 
             Section("History") {
