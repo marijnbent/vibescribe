@@ -1,6 +1,4 @@
 import AppKit
-import ApplicationServices
-import AVFoundation
 import Carbon
 import Combine
 import CoreAudio
@@ -8,12 +6,6 @@ import SwiftUI
 
 @MainActor
 public final class VibeScribeApp: NSObject, NSApplicationDelegate {
-    private enum RecordingLifecycle {
-        case idle
-        case recording
-        case finalizing
-    }
-
     public static func main() {
         let app = NSApplication.shared
         let delegate = VibeScribeApp()
@@ -25,103 +17,35 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private var menuBarController: MenuBarController!
     private var mainWindowController: MainWindowController!
     private var overlayWindowController: OverlayWindowController!
-    private var hotkeyListeners: [UUID: HotkeyListener] = [:]
-    private var audioCapture: AudioCaptureController!
-    private var deepgramClient: DeepgramClient!
-    private var stopWorkItem: DispatchWorkItem?
-    private var recordingLifecycle: RecordingLifecycle = .idle
-    private var recordingOwnership: RecordingOwnership?
-    private var savedMuteState: Bool?
+
+    private var shortcutRuntime: ShortcutRuntime!
+    private var recordingRuntime: RecordingRuntime!
+    private var pasteRuntime: PasteRuntime!
+
+    private let eventMonitorPort: EventMonitorPort = NSEventMonitorAdapter()
+    private let schedulerPort: SchedulerPort = DispatchSchedulerAdapter()
+    private let clockPort: ClockPort = SystemClockAdapter()
+    private let soundPort: SoundPort = NSSoundAdapter()
+    private let pasteboardPort: PasteboardPort = NSPasteboardAdapter()
+    private let audioCapturePort: AudioCapturePort = AudioCaptureControllerAdapter()
+    private let deepgramPort: DeepgramPort = DeepgramClientAdapter()
+
     private var escGlobalMonitor: Any?
     private var escLocalMonitor: Any?
-    private var shortcutGlobalMonitor: Any?
-    private var shortcutLocalMonitor: Any?
+    private var savedMuteState: Bool?
     private var cancellables = Set<AnyCancellable>()
-    private var lastShortcutEventTimestamp: TimeInterval = 0
-    private var lastShortcutEventKeyCode: UInt16 = 0
-    private var lastShortcutEventModifiers: NSEvent.ModifierFlags = []
-    private var pendingTranscriptionError: String?
-    private var hasPlayedTranscriptionFailureSound = false
-    private var recordingStartTime: TimeInterval = 0
-    private var currentRecordingFormat: AudioStreamFormat?
-    private var deepgramReconnectWorkItem: DispatchWorkItem?
-    private var deepgramReconnectAttempt = 0
-    private let clickHoldThreshold: TimeInterval = 0.2
-    private let stopDelay: TimeInterval = 0.2
-    private let clipboardRestoreDelay: TimeInterval = 0.2
-    private let shortcutEventDedupWindow: TimeInterval = 0.02
-    private let deepgramReconnectBaseDelaySeconds: TimeInterval = 0.4
-    private let deepgramReconnectMaxAttempts = DeepgramReconnectPolicy.maxAttempts
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = AppMenuBuilder.build()
 
         appState = AppState()
-        audioCapture = AudioCaptureController()
-        audioCapture.onConfigurationChanged = { [weak self] in
-            Task { @MainActor in
-                self?.handleAudioInputConfigurationChanged()
-            }
-        }
-        deepgramClient = DeepgramClient(
-            onTranscriptEvent: { [weak self] text, isFinal in
-                Task { @MainActor in
-                    self?.handleTranscriptEvent(text, isFinal: isFinal)
-                }
-            },
-            onLog: { [weak self] message, level in
-                Task { @MainActor in
-                    self?.appState.addLog(message, level: level)
-                }
-            },
-            onTranscriptionError: { [weak self] message in
-                Task { @MainActor in
-                    guard let self else { return }
-                    let isFirstErrorInSession = self.pendingTranscriptionError == nil
-                    self.pendingTranscriptionError = message
-                    if self.recordingLifecycle != .idle {
-                        self.appState.statusMessage = "Transcription issue detected."
-                    }
-                    if isFirstErrorInSession,
-                       self.recordingLifecycle != .idle,
-                       !self.hasPlayedTranscriptionFailureSound {
-                        self.playErrorSound(force: true)
-                        self.hasPlayedTranscriptionFailureSound = true
-                    }
-                }
-            },
-            onConnectionDropped: { [weak self] reason in
-                Task { @MainActor in
-                    self?.handleDeepgramConnectionDropped(reason: reason)
-                }
-            }
-        )
-
         mainWindowController = MainWindowController(appState: appState)
         overlayWindowController = OverlayWindowController(appState: appState)
 
-        rebuildHotkeyListeners()
-        startShortcutMonitors()
-        appState.$shortcuts
-            .dropFirst()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.rebuildHotkeyListeners()
-            }
-            .store(in: &cancellables)
-
-        menuBarController = MenuBarController(
-            onOpenMain: { [weak self] in
-                self?.appState.selectedTab = .general
-                self?.mainWindowController.show()
-            },
-            onOpenHistory: { [weak self] in
-                self?.appState.selectedTab = .history
-                self?.mainWindowController.show()
-            },
-            onQuit: { NSApp.terminate(nil) }
-        )
+        configureRuntimes()
+        configureMenuBar()
+        configureShortcutBindings()
 
         NotificationCenter.default.addObserver(
             self,
@@ -137,7 +61,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
-        stopShortcutMonitors()
+        shortcutRuntime.stop()
         stopEscMonitor()
         NotificationCenter.default.removeObserver(
             self,
@@ -150,403 +74,150 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         appState.refreshPermissions()
     }
 
-    // MARK: - Hotkey Listener Management
+    private func configureRuntimes() {
+        recordingRuntime = RecordingRuntime(
+            audioCapture: audioCapturePort,
+            deepgram: deepgramPort,
+            scheduler: schedulerPort,
+            clock: clockPort,
+            languageProvider: { [weak self] in
+                self?.appState.deepgramLanguage ?? .automatic
+            },
+            apiKeyProvider: { [weak self] in
+                self?.appState.apiKey ?? ""
+            },
+            hasEnhancementForShortcut: { [weak self] shortcutID in
+                guard let self else { return false }
+                guard let shortcutID else { return false }
+                return self.appState.promptContent(forShortcutID: shortcutID) != nil
+            },
+            playSoundEffectsEnabledProvider: { [weak self] in
+                self?.appState.playSoundEffects ?? false
+            },
+            muteDuringRecordingProvider: { [weak self] in
+                self?.appState.muteMediaDuringRecording ?? false
+            },
+            soundPort: soundPort
+        )
 
-    private func rebuildHotkeyListeners() {
-        hotkeyListeners.removeAll()
-
-        for shortcut in appState.shortcuts {
-            let hotkey = Hotkey(shortcutKey: shortcut.key)
-            let listener = HotkeyListener(hotkey: hotkey)
-            let id = shortcut.id
-            let mode = shortcut.mode
-
-            listener.onKeyDown = { [weak self] in
-                self?.handleKeyDown(shortcutID: id, mode: mode)
+        pasteRuntime = PasteRuntime(
+            appState: appState,
+            pasteboard: pasteboardPort,
+            soundPort: soundPort,
+            scheduler: schedulerPort,
+            enhancer: { transcript, prompt, apiKey, model in
+                try await OpenRouterClient.enhance(
+                    transcript: transcript,
+                    prompt: prompt,
+                    apiKey: apiKey,
+                    model: model
+                )
             }
-            listener.onKeyUp = { [weak self] in
-                self?.handleKeyUp(shortcutID: id, mode: mode)
-            }
-            hotkeyListeners[id] = listener
+        )
+
+        shortcutRuntime = ShortcutRuntime(
+            eventMonitor: eventMonitorPort,
+            clock: clockPort,
+            clickHoldThreshold: 0.2
+        )
+
+        shortcutRuntime.phaseProvider = { [weak self] in
+            self?.recordingRuntime.phase ?? .idle
         }
-    }
+        shortcutRuntime.ownershipProvider = { [weak self] in
+            self?.recordingRuntime.ownership
+        }
+        shortcutRuntime.onActions = { [weak self] actions in
+            self?.recordingRuntime.handle(actions: actions)
+        }
 
-    private func startShortcutMonitors() {
-        stopShortcutMonitors()
-
-        shortcutGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+        recordingRuntime.onWillStartRecording = { [weak self] in
+            self?.appState.resetTranscript()
+        }
+        recordingRuntime.onStatus = { [weak self] status in
+            self?.appState.appStatus = status
+        }
+        recordingRuntime.onLog = { [weak self] message, level in
+            self?.appState.addLog(message, level: level)
+        }
+        recordingRuntime.onPhaseChanged = { [weak self] phase in
+            self?.appState.recordingPhase = phase
+        }
+        recordingRuntime.onOverlayUpdate = { [weak self] visible, label in
+            self?.setOverlay(visible: visible, label: label)
+        }
+        recordingRuntime.onAudioLevel = { [weak self] level in
+            self?.appState.audioLevel = level
+        }
+        recordingRuntime.onTranscript = { [weak self] text, isFinal in
+            self?.appState.handleTranscript(text, isFinal: isFinal)
+        }
+        recordingRuntime.onFinalizeLatestInterim = { [weak self] in
+            self?.appState.finalizeLatestInterimTranscript()
+        }
+        recordingRuntime.onRequestOpenSettings = { [weak self] in
+            self?.mainWindowController.show()
+        }
+        recordingRuntime.onMuteForRecording = { [weak self] in
+            self?.muteForRecording()
+        }
+        recordingRuntime.onRestoreMute = { [weak self] in
+            self?.restoreMute()
+        }
+        recordingRuntime.onFinalizeRequested = { [weak self] finalization in
+            guard let self else { return }
             Task { @MainActor in
-                self?.handleShortcutEvent(event)
+                await self.pasteRuntime.pasteFinalTranscript(
+                    shortcutID: finalization.shortcutID,
+                    transcriptionError: finalization.transcriptionError
+                )
             }
         }
 
-        shortcutLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.handleShortcutEvent(event)
-            return event
+        pasteRuntime.onHideOverlay = { [weak self] in
+            self?.setOverlay(visible: false, label: nil)
         }
     }
 
-    private func stopShortcutMonitors() {
-        if let monitor = shortcutGlobalMonitor {
-            NSEvent.removeMonitor(monitor)
-            shortcutGlobalMonitor = nil
-        }
-        if let monitor = shortcutLocalMonitor {
-            NSEvent.removeMonitor(monitor)
-            shortcutLocalMonitor = nil
-        }
-    }
+    private func configureShortcutBindings() {
+        shortcutRuntime.configure(shortcuts: appState.shortcuts)
+        shortcutRuntime.start()
 
-    private func handleShortcutEvent(_ event: NSEvent) {
-        let normalizedModifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let isDuplicate = event.keyCode == lastShortcutEventKeyCode
-            && normalizedModifiers == lastShortcutEventModifiers
-            && abs(event.timestamp - lastShortcutEventTimestamp) <= shortcutEventDedupWindow
-        if isDuplicate {
-            return
-        }
-
-        lastShortcutEventTimestamp = event.timestamp
-        lastShortcutEventKeyCode = event.keyCode
-        lastShortcutEventModifiers = normalizedModifiers
-
-        for listener in hotkeyListeners.values {
-            listener.handle(event: event)
-        }
-    }
-
-    // MARK: - Mode-Based Key Handling
-
-    private func handleKeyDown(shortcutID: UUID, mode: ShortcutMode) {
-        guard recordingLifecycle != .finalizing else { return }
-        if ShortcutOwnershipPolicy.shouldIgnore(
-            shortcutID: shortcutID,
-            isRecording: recordingLifecycle == .recording,
-            ownership: recordingOwnership
-        ) {
-            return
-        }
-
-        switch mode {
-        case .hold:
-            handleHoldKeyDown(shortcutID: shortcutID)
-        case .click:
-            handleClickKeyDown(shortcutID: shortcutID)
-        case .both:
-            handleBothKeyDown(shortcutID: shortcutID)
-        }
-    }
-
-    private func handleKeyUp(shortcutID: UUID, mode: ShortcutMode) {
-        guard recordingLifecycle != .finalizing else { return }
-        if ShortcutOwnershipPolicy.shouldIgnore(
-            shortcutID: shortcutID,
-            isRecording: recordingLifecycle == .recording,
-            ownership: recordingOwnership
-        ) {
-            return
-        }
-
-        switch mode {
-        case .hold:
-            handleHoldKeyUp(shortcutID: shortcutID)
-        case .click:
-            break
-        case .both:
-            handleBothKeyUp(shortcutID: shortcutID)
-        }
-    }
-
-    // MARK: Hold Mode
-
-    private func handleHoldKeyDown(shortcutID: UUID) {
-        guard recordingLifecycle == .idle else { return }
-        startRecording(ownerShortcutID: shortcutID, ownerMode: .hold, isLatched: false)
-    }
-
-    private func handleHoldKeyUp(shortcutID: UUID) {
-        guard ShortcutOwnershipPolicy.isOwner(shortcutID: shortcutID, ownership: recordingOwnership) else { return }
-        guard recordingLifecycle == .recording else { return }
-        let elapsed = CACurrentMediaTime() - recordingStartTime
-        if elapsed < clickHoldThreshold {
-            cancelRecording()
-            return
-        }
-        scheduleStopRecording()
-    }
-
-    // MARK: Click Mode
-
-    private func handleClickKeyDown(shortcutID: UUID) {
-        if recordingLifecycle == .recording {
-            guard ShortcutOwnershipPolicy.isOwner(shortcutID: shortcutID, ownership: recordingOwnership) else { return }
-            stopRecording()
-            return
-        }
-        guard recordingLifecycle == .idle else { return }
-        startRecording(ownerShortcutID: shortcutID, ownerMode: .click, isLatched: true)
-    }
-
-    // MARK: Both Mode (Hold + Click)
-
-    private func handleBothKeyDown(shortcutID: UUID) {
-        if recordingLifecycle == .recording {
-            guard var ownership = recordingOwnership, ownership.ownerShortcutID == shortcutID else { return }
-            guard ownership.isLatched else { return }
-            ownership.isLatched = false
-            recordingOwnership = ownership
-            stopRecording()
-            return
-        }
-
-        guard recordingLifecycle == .idle else { return }
-        cancelPendingStop()
-        startRecording(ownerShortcutID: shortcutID, ownerMode: .both, isLatched: false)
-    }
-
-    private func handleBothKeyUp(shortcutID: UUID) {
-        guard var ownership = recordingOwnership else { return }
-        guard ownership.ownerShortcutID == shortcutID else { return }
-        guard recordingLifecycle == .recording else { return }
-        if ownership.isLatched { return }
-
-        let elapsed = CACurrentMediaTime() - recordingStartTime
-        if elapsed < clickHoldThreshold {
-            ownership.isLatched = true
-            recordingOwnership = ownership
-        } else {
-            scheduleStopRecording()
-        }
-    }
-
-    // MARK: - Audio Input Change
-
-    private func handleAudioInputConfigurationChanged() {
-        appState.addLog("Audio input changed. Capture engine reset.", level: .warning)
-        guard recordingLifecycle != .idle else {
-            appState.statusMessage = "Audio input changed. Ready."
-            return
-        }
-
-        finishActiveSession(disconnectDeepgram: true, clearPendingTranscriptionError: true)
-        appState.statusMessage = "Input changed. Ready."
-        appState.addLog("Recording stopped because the input device changed.", level: .warning)
-    }
-
-    // MARK: - Recording
-
-    private func startRecording(ownerShortcutID: UUID, ownerMode: ShortcutMode, isLatched: Bool) {
-        guard recordingLifecycle == .idle else { return }
-
-        let apiKey = appState.apiKey.trimmed
-        guard !apiKey.isEmpty else {
-            appState.statusMessage = "Add a Deepgram API key in Settings."
-            appState.addLog("Missing API key. Open Settings to add one.", level: .warning)
-            mainWindowController.show()
-            return
-        }
-
-        do {
-            pendingTranscriptionError = nil
-            hasPlayedTranscriptionFailureSound = false
-            cancelDeepgramReconnect()
-            deepgramReconnectAttempt = 0
-            appState.resetTranscript()
-            let format = try audioCapture.start()
-            currentRecordingFormat = format
-            recordingStartTime = CACurrentMediaTime()
-            recordingOwnership = RecordingOwnership(
-                ownerShortcutID: ownerShortcutID,
-                ownerMode: ownerMode,
-                isLatched: isLatched,
-                recordingStartedAt: recordingStartTime,
-                sessionID: UUID()
-            )
-            recordingLifecycle = .recording
-            appState.addLog("Audio capture started (\(format.sampleRate) Hz, \(format.channels) ch).", level: .info)
-            deepgramClient.connect(apiKey: apiKey, format: format, language: appState.deepgramLanguage)
-
-            audioCapture.onBuffer = { [weak self] buffer in
-                self?.deepgramClient.sendAudio(buffer: buffer)
-                let level = rmsLevel(from: buffer)
-                Task { @MainActor in
-                    self?.appState.audioLevel = level
-                }
+        appState.$shortcuts
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] shortcuts in
+                self?.shortcutRuntime.configure(shortcuts: shortcuts)
             }
+            .store(in: &cancellables)
+    }
 
-            appState.isRecording = true
-            appState.overlayLabel = "Listening"
+    private func configureMenuBar() {
+        menuBarController = MenuBarController(
+            onOpenMain: { [weak self] in
+                self?.appState.selectedTab = .general
+                self?.mainWindowController.show()
+            },
+            onOpenHistory: { [weak self] in
+                self?.appState.selectedTab = .history
+                self?.mainWindowController.show()
+            },
+            onQuit: { NSApp.terminate(nil) }
+        )
+    }
+
+    private func setOverlay(visible: Bool, label: String?) {
+        if let label {
+            appState.overlayLabel = label
+        }
+
+        if visible {
             appState.overlayVisible = true
-            appState.statusMessage = "Listening..."
             overlayWindowController.show()
-            playSound("Tink")
-            if appState.muteMediaDuringRecording {
-                muteForRecording()
-            }
-            appState.addLog("Language: \(appState.deepgramLanguage.displayName) (\(appState.deepgramLanguage.deepgramCode)).", level: .info)
-            appState.addLog("Listening started.", level: .info)
-        } catch {
-            recordingLifecycle = .idle
-            recordingOwnership = nil
-            appState.statusMessage = "Failed to start audio capture: \(error.localizedDescription)"
-            appState.addLog("Failed to start audio capture: \(error.localizedDescription)", level: .error)
-        }
-    }
-
-    private func stopRecording() {
-        guard recordingLifecycle == .recording else { return }
-
-        cancelPendingStop()
-        cancelDeepgramReconnect()
-        audioCapture.stop()
-        recordingLifecycle = .finalizing
-        appState.isRecording = false
-        appState.audioLevel = 0
-        appState.statusMessage = "Finalizing..."
-
-        restoreMute()
-
-        let shortcutID = recordingOwnership?.ownerShortcutID
-        let hasEnhancement = shortcutID.flatMap { appState.promptContent(forShortcutID: $0) } != nil
-
-        if hasEnhancement {
-            appState.overlayLabel = "Enhancing"
         } else {
             appState.overlayVisible = false
             overlayWindowController.hide()
         }
-
-        deepgramClient.closeStream { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                self.appState.addLog("Listening stopped.", level: .info)
-                await self.pasteFinalTranscript(shortcutID: shortcutID)
-                self.finishActiveSession(disconnectDeepgram: false, clearPendingTranscriptionError: false)
-                self.appState.statusMessage = "Idle"
-            }
-        }
-    }
-
-    private func handleTranscriptEvent(_ text: String, isFinal: Bool) {
-        let wasRecovering = deepgramReconnectAttempt > 0 || deepgramReconnectWorkItem != nil
-        if wasRecovering {
-            cancelDeepgramReconnect()
-            deepgramReconnectAttempt = 0
-            if recordingLifecycle == .recording {
-                appState.statusMessage = "Listening..."
-            }
-            if pendingTranscriptionError != nil {
-                pendingTranscriptionError = nil
-                appState.addLog("Deepgram connection recovered. Transcription resumed.", level: .info)
-            }
-        }
-
-        appState.handleTranscript(text, isFinal: isFinal)
-    }
-
-    private func handleDeepgramConnectionDropped(reason: String) {
-        guard recordingLifecycle == .recording else { return }
-        guard currentRecordingFormat != nil else { return }
-        guard deepgramReconnectWorkItem == nil else { return }
-
-        // Preserve the latest interim transcript so mid-utterance drops do not lose already recognized speech.
-        appState.finalizeLatestInterimTranscript()
-
-        if !DeepgramReconnectPolicy.shouldRetry(currentAttempt: deepgramReconnectAttempt) {
-            appState.statusMessage = "Connection lost. Release hotkey to finalize."
-            appState.addLog(
-                "Deepgram reconnect limit reached (\(deepgramReconnectMaxAttempts) attempts). Last error: \(reason)",
-                level: .error
-            )
-            return
-        }
-
-        deepgramReconnectAttempt += 1
-        let attempt = deepgramReconnectAttempt
-        let delay = deepgramReconnectBaseDelaySeconds
-        let delayText = String(format: "%.1f", delay)
-        appState.statusMessage = "Connection hiccup. Recovering..."
-        appState.addLog(
-            "Deepgram connection dropped. Reconnecting in \(delayText)s (attempt \(attempt)/\(deepgramReconnectMaxAttempts)).",
-            level: .warning
-        )
-
-        let workItem = DispatchWorkItem { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                self.deepgramReconnectWorkItem = nil
-                guard self.recordingLifecycle == .recording else { return }
-                guard let format = self.currentRecordingFormat else { return }
-                let apiKey = self.appState.apiKey.trimmed
-                guard !apiKey.isEmpty else { return }
-
-                self.appState.addLog(
-                    "Attempting Deepgram reconnect (\(attempt)/\(self.deepgramReconnectMaxAttempts)).",
-                    level: .warning
-                )
-                self.deepgramClient.connect(
-                    apiKey: apiKey,
-                    format: format,
-                    language: self.appState.deepgramLanguage
-                )
-            }
-        }
-
-        deepgramReconnectWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
-    }
-
-    private func scheduleStopRecording() {
-        cancelPendingStop()
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.stopRecording()
-        }
-        stopWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + stopDelay, execute: workItem)
-    }
-
-    private func cancelPendingStop() {
-        stopWorkItem?.cancel()
-        stopWorkItem = nil
-    }
-
-    private func cancelDeepgramReconnect() {
-        deepgramReconnectWorkItem?.cancel()
-        deepgramReconnectWorkItem = nil
-    }
-
-    private func finishActiveSession(disconnectDeepgram: Bool, clearPendingTranscriptionError: Bool) {
-        cancelPendingStop()
-        cancelDeepgramReconnect()
-        audioCapture.stop()
-        if disconnectDeepgram {
-            deepgramClient.disconnect()
-        }
-
-        recordingLifecycle = .idle
-        recordingOwnership = nil
-        currentRecordingFormat = nil
-        deepgramReconnectAttempt = 0
-        restoreMute()
-        appState.isRecording = false
-        appState.audioLevel = 0
-        hideOverlay()
-
-        if clearPendingTranscriptionError {
-            pendingTranscriptionError = nil
-            hasPlayedTranscriptionFailureSound = false
-        }
-    }
-
-    // MARK: - Cancel Recording
-
-    private func cancelRecording() {
-        guard recordingLifecycle != .idle else { return }
-
-        finishActiveSession(disconnectDeepgram: true, clearPendingTranscriptionError: true)
-        playSound("Pop")
-        appState.statusMessage = "Cancelled."
-        appState.addLog("Recording cancelled.", level: .info)
     }
 
     // MARK: - ESC Key Monitor
@@ -554,19 +225,19 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private func startEscMonitor() {
         let escKeyCode = UInt16(kVK_Escape)
 
-        escGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        escGlobalMonitor = eventMonitorPort.addGlobalMonitor(matching: .keyDown) { [weak self] event in
             guard event.keyCode == escKeyCode else { return }
             Task { @MainActor in
                 guard let self, self.appState.isRecording, self.appState.escToCancelRecording else { return }
-                self.cancelRecording()
+                self.recordingRuntime.cancelFromEsc()
             }
         }
 
-        escLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        escLocalMonitor = eventMonitorPort.addLocalMonitor(matching: .keyDown) { [weak self] event in
             guard event.keyCode == escKeyCode else { return event }
             Task { @MainActor in
                 guard let self, self.appState.isRecording, self.appState.escToCancelRecording else { return }
-                self.cancelRecording()
+                self.recordingRuntime.cancelFromEsc()
             }
             return event
         }
@@ -574,16 +245,16 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
     private func stopEscMonitor() {
         if let monitor = escGlobalMonitor {
-            NSEvent.removeMonitor(monitor)
+            eventMonitorPort.removeMonitor(monitor)
             escGlobalMonitor = nil
         }
         if let monitor = escLocalMonitor {
-            NSEvent.removeMonitor(monitor)
+            eventMonitorPort.removeMonitor(monitor)
             escLocalMonitor = nil
         }
     }
 
-    // MARK: - Media Control
+    // MARK: - Media Mute Control
 
     private func defaultOutputDevice() -> AudioDeviceID? {
         var deviceID = AudioDeviceID(0)
@@ -646,201 +317,5 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         guard let wasMuted = savedMuteState else { return }
         savedMuteState = nil
         setSystemMute(wasMuted)
-    }
-
-    // MARK: - Sound Effects
-
-    private func playSound(_ name: String) {
-        guard appState.playSoundEffects else { return }
-        NSSound(named: name)?.play()
-    }
-
-    private func playErrorSound(force: Bool = false) {
-        guard force || appState.playSoundEffects else { return }
-        NSSound(named: "Basso")?.play()
-    }
-
-    // MARK: - Paste with Enhancement
-
-    private func pasteFinalTranscript(shortcutID: UUID?) async {
-        let finalText = appState.finalTranscript.trimmed
-        let fallbackText = appState.lastTranscript.trimmed
-        let rawText = finalText.isEmpty ? fallbackText : finalText
-        let transcriptionError = pendingTranscriptionError
-        pendingTranscriptionError = nil
-
-        guard !rawText.isEmpty else {
-            let reason = transcriptionError ?? TranscriptHistoryEntry.emptyTranscriptionMessage
-            appState.statusMessage = "Transcription failed."
-            appState.addLog("Transcription failed: \(reason)", level: .error)
-            appState.addTranscriptionFailureToHistory(reason: reason)
-            hideOverlay()
-            if transcriptionError != nil {
-                if !hasPlayedTranscriptionFailureSound {
-                    playErrorSound(force: true)
-                    hasPlayedTranscriptionFailureSound = true
-                }
-            } else {
-                playSound("Pop")
-            }
-            return
-        }
-
-        // Enhancement via OpenRouter
-        var enhancedText: String?
-        var enhancementFailed = false
-        var enhancementError: String?
-        if let shortcutID,
-           let prompt = appState.promptContent(forShortcutID: shortcutID) {
-            if !appState.hasOpenRouterCredentials {
-                let missing = appState.openRouterApiKey.trimmed.isEmpty ? "API key" : "model"
-                let reason = "OpenRouter \(missing) is not set."
-                appState.statusMessage = "Enhancement skipped: missing \(missing)."
-                appState.addLog("Enhancement skipped: \(reason)", level: .warning)
-                enhancementError = reason
-                enhancementFailed = true
-            } else {
-                let model = appState.openRouterModel.trimmed
-                let requestStart = Date()
-                appState.statusMessage = "Enhancing..."
-                appState.addLog("Sending transcript to OpenRouter for enhancement (model: \(model)).", level: .info)
-                do {
-                    let enhanced = try await OpenRouterClient.enhance(
-                        transcript: rawText,
-                        prompt: prompt,
-                        apiKey: appState.openRouterApiKey.trimmed,
-                        model: model
-                    )
-                    let latencyMs = Int(Date().timeIntervalSince(requestStart) * 1_000)
-                    let trimmed = enhanced.trimmed
-                    if !trimmed.isEmpty {
-                        enhancedText = trimmed
-                        appState.addLog("Transcript enhanced successfully (model: \(model), \(latencyMs) ms).", level: .info)
-                    } else {
-                        appState.statusMessage = "Enhancement failed. Pasting original."
-                        appState.addLog(
-                            "Enhancement failed (model: \(model), \(latencyMs) ms): OpenRouter returned empty content.",
-                            level: .error
-                        )
-                        enhancementError = "OpenRouter returned empty content."
-                        enhancementFailed = true
-                    }
-                } catch {
-                    let latencyMs = Int(Date().timeIntervalSince(requestStart) * 1_000)
-                    let reason = error.localizedDescription.trimmed.isEmpty
-                        ? String(describing: error)
-                        : error.localizedDescription
-                    appState.statusMessage = "Enhancement failed. Pasting original."
-                    appState.addLog(
-                        "Enhancement failed (model: \(model), \(latencyMs) ms): \(reason)",
-                        level: .error
-                    )
-                    enhancementError = reason
-                    enhancementFailed = true
-                }
-            }
-        }
-
-        hideOverlay()
-
-        let textToPaste = enhancedText ?? rawText
-        let pasteboard = NSPasteboard.general
-        let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
-        pasteboard.clearContents()
-        pasteboard.setString(textToPaste, forType: .string)
-        appState.addTranscriptToHistory(
-            rawText,
-            enhancedText: enhancedText,
-            transcriptionError: transcriptionError,
-            enhancementError: enhancementError
-        )
-        if let transcriptionError {
-            appState.addLog("Transcript completed with warning: \(transcriptionError)", level: .warning)
-            if !hasPlayedTranscriptionFailureSound {
-                playErrorSound(force: true)
-                hasPlayedTranscriptionFailureSound = true
-            }
-        }
-        if enhancementFailed {
-            appState.addLog("Pasted original transcription because enhancement failed.", level: .warning)
-        }
-        appState.addLog("Transcript copied to clipboard.", level: .info)
-        appState.statusMessage = "Idle"
-
-        if !AXIsProcessTrusted() {
-            appState.addLog("Accessibility permission not granted. Enable it to allow paste automation.", level: .warning)
-        }
-
-        guard let source = CGEventSource(stateID: .combinedSessionState) else {
-            appState.addLog("Failed to create CGEventSource for paste.", level: .error)
-            snapshot.restore(to: pasteboard)
-            if enhancementFailed { playErrorSound() } else { playSound("Pop") }
-            return
-        }
-
-        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true)
-        keyDown?.flags = .maskCommand
-        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false)
-        keyUp?.flags = .maskCommand
-
-        keyDown?.post(tap: .cghidEventTap)
-        keyUp?.post(tap: .cghidEventTap)
-
-        appState.addLog("Paste command sent (Cmd+V).", level: .info)
-
-        if enhancementFailed { playErrorSound() } else { playSound("Pop") }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + clipboardRestoreDelay) {
-            snapshot.restore(to: pasteboard)
-        }
-    }
-
-    private func hideOverlay() {
-        guard appState.overlayVisible else { return }
-        appState.overlayVisible = false
-        overlayWindowController.hide()
-    }
-}
-
-private func rmsLevel(from buffer: AVAudioPCMBuffer) -> CGFloat {
-    guard let channelData = buffer.floatChannelData else { return 0 }
-    let frameLength = Int(buffer.frameLength)
-    guard frameLength > 0 else { return 0 }
-    let samples = channelData[0]
-    var sum: Float = 0
-    for i in 0..<frameLength {
-        let s = samples[i]
-        sum += s * s
-    }
-    let rms = sqrt(sum / Float(frameLength))
-    return CGFloat(min(1, sqrt(rms) * 3.5))
-}
-
-private struct PasteboardSnapshot {
-    private let items: [[NSPasteboard.PasteboardType: Data]]
-
-    init(pasteboard: NSPasteboard) {
-        items = pasteboard.pasteboardItems?.map { item in
-            var dataByType: [NSPasteboard.PasteboardType: Data] = [:]
-            for type in item.types {
-                if let data = item.data(forType: type) {
-                    dataByType[type] = data
-                }
-            }
-            return dataByType
-        } ?? []
-    }
-
-    func restore(to pasteboard: NSPasteboard) {
-        pasteboard.clearContents()
-        guard !items.isEmpty else { return }
-        let restoredItems = items.map { dataByType -> NSPasteboardItem in
-            let item = NSPasteboardItem()
-            for (type, data) in dataByType {
-                item.setData(data, forType: type)
-            }
-            return item
-        }
-        pasteboard.writeObjects(restoredItems)
     }
 }

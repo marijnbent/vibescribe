@@ -21,8 +21,8 @@ final class AppState: ObservableObject {
     private static let accessibilityPromptDelayNanoseconds: UInt64 = 500_000_000
     private static let maxLogEntries = 1_000
 
-    @Published var isRecording = false
-    @Published var statusMessage = "Idle"
+    @Published var recordingPhase: RecordingPhase = .idle
+    @Published var appStatus: AppStatus = .idle
     @Published var lastTranscript = ""
     @Published var finalTranscript = ""
     @Published var logs: [LogEntry] = []
@@ -34,6 +34,14 @@ final class AppState: ObservableObject {
     @Published var microphonePermission: PermissionStatus = .notDetermined
     @Published var accessibilityPermission: PermissionStatus = .notDetermined
     @Published var selectedTab: SettingsTab = .general
+
+    var isRecording: Bool {
+        recordingPhase == .recording
+    }
+
+    var statusMessage: String {
+        appStatus.message
+    }
 
     @Published var apiKey: String {
         didSet {

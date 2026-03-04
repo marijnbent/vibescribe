@@ -8,10 +8,10 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
     private var task: URLSessionWebSocketTask?
     private var isConnected = false
     private var isClosing = false
-    private let onTranscriptEvent: (@Sendable (String, Bool) -> Void)?
-    private let onLog: (@Sendable (String, LogLevel) -> Void)?
-    private let onTranscriptionError: (@Sendable (String) -> Void)?
-    private let onConnectionDropped: (@Sendable (String) -> Void)?
+    private let onTranscriptEvent: ((String, Bool) -> Void)?
+    private let onLog: ((String, LogLevel) -> Void)?
+    private let onTranscriptionError: ((String) -> Void)?
+    private let onConnectionDropped: ((String) -> Void)?
     private var onClose: (() -> Void)?
     private var closeTimer: DispatchSourceTimer?
     private var droppedAudioBufferCount = 0
@@ -21,10 +21,10 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
     private let closeTimeoutSeconds: TimeInterval = 1.0
 
     init(
-        onTranscriptEvent: (@Sendable (String, Bool) -> Void)? = nil,
-        onLog: (@Sendable (String, LogLevel) -> Void)? = nil,
-        onTranscriptionError: (@Sendable (String) -> Void)? = nil,
-        onConnectionDropped: (@Sendable (String) -> Void)? = nil
+        onTranscriptEvent: ((String, Bool) -> Void)? = nil,
+        onLog: ((String, LogLevel) -> Void)? = nil,
+        onTranscriptionError: ((String) -> Void)? = nil,
+        onConnectionDropped: ((String) -> Void)? = nil
     ) {
         let configuration = URLSessionConfiguration.default
         self.session = URLSession(configuration: configuration, delegate: nil, delegateQueue: nil)
