@@ -161,6 +161,15 @@ final class AppState: ObservableObject {
         }
     }
 
+    func finalizeLatestInterimTranscript() {
+        let trimmed = lastTranscript.trimmed
+        guard !trimmed.isEmpty else { return }
+        if transcriptSegments.last != trimmed {
+            transcriptSegments.append(trimmed)
+            finalTranscript = transcriptSegments.joined(separator: " ")
+        }
+    }
+
     func addLog(_ message: String, level: LogLevel = .info) {
         logs.append(LogEntry(timestamp: Date(), level: level, message: message))
         if logs.count > Self.maxLogEntries {

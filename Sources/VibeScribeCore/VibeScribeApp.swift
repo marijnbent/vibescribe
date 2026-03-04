@@ -38,10 +38,15 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private var isTranscriptionSessionActive = false
     private var hasPlayedTranscriptionFailureSound = false
     private var recordingStartTime: TimeInterval = 0
+    private var currentRecordingFormat: AudioStreamFormat?
+    private var deepgramReconnectWorkItem: DispatchWorkItem?
+    private var deepgramReconnectAttempt = 0
     private let clickHoldThreshold: TimeInterval = 0.2
     private let stopDelay: TimeInterval = 0.2
     private let clipboardRestoreDelay: TimeInterval = 0.2
     private let shortcutEventDedupWindow: TimeInterval = 0.02
+    private let deepgramReconnectBaseDelaySeconds: TimeInterval = 0.4
+    private let deepgramReconnectMaxAttempts = 5
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -57,7 +62,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         deepgramClient = DeepgramClient(
             onTranscriptEvent: { [weak self] text, isFinal in
                 Task { @MainActor in
-                    self?.appState.handleTranscript(text, isFinal: isFinal)
+                    self?.handleTranscriptEvent(text, isFinal: isFinal)
                 }
             },
             onLog: { [weak self] message, level in
@@ -79,6 +84,11 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
                         self.playErrorSound(force: true)
                         self.hasPlayedTranscriptionFailureSound = true
                     }
+                }
+            },
+            onConnectionDropped: { [weak self] reason in
+                Task { @MainActor in
+                    self?.handleDeepgramConnectionDropped(reason: reason)
                 }
             }
         )
@@ -298,6 +308,8 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         pendingTranscriptionError = nil
         isTranscriptionSessionActive = false
         hasPlayedTranscriptionFailureSound = false
+        cancelDeepgramReconnect()
+        currentRecordingFormat = nil
         restoreMute()
         deepgramClient.disconnect()
         appState.isRecording = false
@@ -324,8 +336,11 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             pendingTranscriptionError = nil
             isTranscriptionSessionActive = true
             hasPlayedTranscriptionFailureSound = false
+            cancelDeepgramReconnect()
+            deepgramReconnectAttempt = 0
             appState.resetTranscript()
             let format = try audioCapture.start()
+            currentRecordingFormat = format
             appState.addLog("Audio capture started (\(format.sampleRate) Hz, \(format.channels) ch).", level: .info)
             deepgramClient.connect(apiKey: apiKey, format: format, language: appState.deepgramLanguage)
 
@@ -363,6 +378,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
         cancelPendingStop()
         isLatchedRecording = false
+        cancelDeepgramReconnect()
         audioCapture.stop()
         appState.isRecording = false
         appState.audioLevel = 0
@@ -386,8 +402,79 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
                 self.appState.addLog("Listening stopped.", level: .info)
                 await self.pasteFinalTranscript(shortcutID: shortcutID)
                 self.activeShortcutID = nil
+                self.currentRecordingFormat = nil
+                self.deepgramReconnectAttempt = 0
             }
         }
+    }
+
+    private func handleTranscriptEvent(_ text: String, isFinal: Bool) {
+        let wasRecovering = deepgramReconnectAttempt > 0 || deepgramReconnectWorkItem != nil
+        if wasRecovering {
+            cancelDeepgramReconnect()
+            deepgramReconnectAttempt = 0
+            if appState.isRecording {
+                appState.statusMessage = "Listening..."
+            }
+            if pendingTranscriptionError != nil {
+                pendingTranscriptionError = nil
+                appState.addLog("Deepgram connection recovered. Transcription resumed.", level: .info)
+            }
+        }
+
+        appState.handleTranscript(text, isFinal: isFinal)
+    }
+
+    private func handleDeepgramConnectionDropped(reason: String) {
+        guard appState.isRecording, isTranscriptionSessionActive else { return }
+        guard currentRecordingFormat != nil else { return }
+        guard deepgramReconnectWorkItem == nil else { return }
+
+        // Preserve the latest interim transcript so mid-utterance drops do not lose already recognized speech.
+        appState.finalizeLatestInterimTranscript()
+
+        if deepgramReconnectAttempt >= deepgramReconnectMaxAttempts {
+            appState.statusMessage = "Connection lost. Release hotkey to finalize."
+            appState.addLog(
+                "Deepgram reconnect limit reached (\(deepgramReconnectMaxAttempts) attempts). Last error: \(reason)",
+                level: .error
+            )
+            return
+        }
+
+        deepgramReconnectAttempt += 1
+        let attempt = deepgramReconnectAttempt
+        let delay = min(4.0, deepgramReconnectBaseDelaySeconds * pow(2.0, Double(attempt - 1)))
+        let delayText = String(format: "%.1f", delay)
+        appState.statusMessage = "Connection hiccup. Recovering..."
+        appState.addLog(
+            "Deepgram connection dropped. Reconnecting in \(delayText)s (attempt \(attempt)/\(deepgramReconnectMaxAttempts)).",
+            level: .warning
+        )
+
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.deepgramReconnectWorkItem = nil
+                guard self.appState.isRecording, self.isTranscriptionSessionActive else { return }
+                guard let format = self.currentRecordingFormat else { return }
+                let apiKey = self.appState.apiKey.trimmed
+                guard !apiKey.isEmpty else { return }
+
+                self.appState.addLog(
+                    "Attempting Deepgram reconnect (\(attempt)/\(self.deepgramReconnectMaxAttempts)).",
+                    level: .warning
+                )
+                self.deepgramClient.connect(
+                    apiKey: apiKey,
+                    format: format,
+                    language: self.appState.deepgramLanguage
+                )
+            }
+        }
+
+        deepgramReconnectWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 
     private func scheduleStopRecording() {
@@ -404,17 +491,25 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         stopWorkItem = nil
     }
 
+    private func cancelDeepgramReconnect() {
+        deepgramReconnectWorkItem?.cancel()
+        deepgramReconnectWorkItem = nil
+    }
+
     // MARK: - Cancel Recording
 
     private func cancelRecording() {
         guard appState.isRecording else { return }
 
         cancelPendingStop()
+        cancelDeepgramReconnect()
         audioCapture.stop()
         deepgramClient.disconnect()
         pendingTranscriptionError = nil
         isTranscriptionSessionActive = false
         hasPlayedTranscriptionFailureSound = false
+        currentRecordingFormat = nil
+        deepgramReconnectAttempt = 0
         isLatchedRecording = false
         activeShortcutID = nil
         restoreMute()

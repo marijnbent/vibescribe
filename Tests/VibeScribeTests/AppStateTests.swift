@@ -58,6 +58,27 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(state.finalTranscript, "")
     }
 
+    func testFinalizeLatestInterimTranscriptPromotesLastTranscript() {
+        let state = AppState()
+        state.resetTranscript()
+
+        state.handleTranscript("this is interim", isFinal: false)
+        state.finalizeLatestInterimTranscript()
+
+        XCTAssertEqual(state.finalTranscript, "this is interim")
+    }
+
+    func testFinalizeLatestInterimTranscriptAvoidsDuplicateSegment() {
+        let state = AppState()
+        state.resetTranscript()
+
+        state.handleTranscript("segment", isFinal: true)
+        state.handleTranscript("segment", isFinal: false)
+        state.finalizeLatestInterimTranscript()
+
+        XCTAssertEqual(state.finalTranscript, "segment")
+    }
+
     func testResetTranscriptClearsState() {
         let state = AppState()
         state.handleTranscript("hello", isFinal: true)
