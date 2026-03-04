@@ -91,8 +91,12 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
         }
 
         task.send(.data(data)) { [weak self] error in
-            if let error {
-                self?.reportTranscriptionError("WebSocket send error: \(error.localizedDescription)")
+            guard let self, let error else { return }
+            let shouldReport = self.queue.sync {
+                self.task === task && self.isConnected && !self.isClosing
+            }
+            if shouldReport {
+                self.reportTranscriptionError("WebSocket send error: \(error.localizedDescription)")
             }
         }
     }
@@ -106,6 +110,7 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
 
         queue.sync {
             isClosing = true
+            isConnected = false
             onClose = onClosed
         }
 
@@ -122,16 +127,20 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
     }
 
     func disconnect() {
-        queue.sync {
+        let hadConnection = queue.sync { () -> Bool in
+            let hadConnection = isConnected || isClosing || task != nil
             isConnected = false
             isClosing = false
             task?.cancel(with: .goingAway, reason: nil)
             task = nil
             onClose = nil
+            return hadConnection
         }
         closeTimer?.cancel()
         closeTimer = nil
-        onLog?("WebSocket disconnected.", .info)
+        if hadConnection {
+            onLog?("WebSocket disconnected.", .info)
+        }
     }
 
     private func receiveLoop(for task: URLSessionWebSocketTask) {

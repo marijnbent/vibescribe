@@ -28,11 +28,20 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private var activeShortcutID: UUID?
     private var escGlobalMonitor: Any?
     private var escLocalMonitor: Any?
+    private var shortcutGlobalMonitor: Any?
+    private var shortcutLocalMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
+    private var lastShortcutEventTimestamp: TimeInterval = 0
+    private var lastShortcutEventKeyCode: UInt16 = 0
+    private var lastShortcutEventModifiers: NSEvent.ModifierFlags = []
+    private var pendingTranscriptionError: String?
+    private var isTranscriptionSessionActive = false
+    private var hasPlayedTranscriptionFailureSound = false
     private var recordingStartTime: TimeInterval = 0
     private let clickHoldThreshold: TimeInterval = 0.2
     private let stopDelay: TimeInterval = 0.2
     private let clipboardRestoreDelay: TimeInterval = 0.2
+    private let shortcutEventDedupWindow: TimeInterval = 0.02
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -41,7 +50,9 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         appState = AppState()
         audioCapture = AudioCaptureController()
         audioCapture.onConfigurationChanged = { [weak self] in
-            self?.handleAudioInputConfigurationChanged()
+            Task { @MainActor in
+                self?.handleAudioInputConfigurationChanged()
+            }
         }
         deepgramClient = DeepgramClient(
             onTranscriptEvent: { [weak self] text, isFinal in
@@ -53,6 +64,22 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
                 Task { @MainActor in
                     self?.appState.addLog(message, level: level)
                 }
+            },
+            onTranscriptionError: { [weak self] message in
+                Task { @MainActor in
+                    guard let self else { return }
+                    let isFirstErrorInSession = self.pendingTranscriptionError == nil
+                    self.pendingTranscriptionError = message
+                    if self.appState.isRecording {
+                        self.appState.statusMessage = "Transcription issue detected."
+                    }
+                    if isFirstErrorInSession,
+                       self.isTranscriptionSessionActive,
+                       !self.hasPlayedTranscriptionFailureSound {
+                        self.playErrorSound(force: true)
+                        self.hasPlayedTranscriptionFailureSound = true
+                    }
+                }
             }
         )
 
@@ -60,6 +87,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         overlayWindowController = OverlayWindowController(appState: appState)
 
         rebuildHotkeyListeners()
+        startShortcutMonitors()
         appState.$shortcuts
             .dropFirst()
             .receive(on: RunLoop.main)
@@ -94,6 +122,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
+        stopShortcutMonitors()
         stopEscMonitor()
         NotificationCenter.default.removeObserver(
             self,
@@ -109,9 +138,6 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     // MARK: - Hotkey Listener Management
 
     private func rebuildHotkeyListeners() {
-        for listener in hotkeyListeners.values {
-            listener.stop()
-        }
         hotkeyListeners.removeAll()
 
         for shortcut in appState.shortcuts {
@@ -126,8 +152,51 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             listener.onKeyUp = { [weak self] in
                 self?.handleKeyUp(shortcutID: id, mode: mode)
             }
-            listener.start()
             hotkeyListeners[id] = listener
+        }
+    }
+
+    private func startShortcutMonitors() {
+        stopShortcutMonitors()
+
+        shortcutGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            Task { @MainActor in
+                self?.handleShortcutEvent(event)
+            }
+        }
+
+        shortcutLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            self?.handleShortcutEvent(event)
+            return event
+        }
+    }
+
+    private func stopShortcutMonitors() {
+        if let monitor = shortcutGlobalMonitor {
+            NSEvent.removeMonitor(monitor)
+            shortcutGlobalMonitor = nil
+        }
+        if let monitor = shortcutLocalMonitor {
+            NSEvent.removeMonitor(monitor)
+            shortcutLocalMonitor = nil
+        }
+    }
+
+    private func handleShortcutEvent(_ event: NSEvent) {
+        let normalizedModifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let isDuplicate = event.keyCode == lastShortcutEventKeyCode
+            && normalizedModifiers == lastShortcutEventModifiers
+            && abs(event.timestamp - lastShortcutEventTimestamp) <= shortcutEventDedupWindow
+        if isDuplicate {
+            return
+        }
+
+        lastShortcutEventTimestamp = event.timestamp
+        lastShortcutEventKeyCode = event.keyCode
+        lastShortcutEventModifiers = normalizedModifiers
+
+        for listener in hotkeyListeners.values {
+            listener.handle(event: event)
         }
     }
 
@@ -226,6 +295,9 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         cancelPendingStop()
         isLatchedRecording = false
         activeShortcutID = nil
+        pendingTranscriptionError = nil
+        isTranscriptionSessionActive = false
+        hasPlayedTranscriptionFailureSound = false
         restoreMute()
         deepgramClient.disconnect()
         appState.isRecording = false
@@ -249,6 +321,9 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         }
 
         do {
+            pendingTranscriptionError = nil
+            isTranscriptionSessionActive = true
+            hasPlayedTranscriptionFailureSound = false
             appState.resetTranscript()
             let format = try audioCapture.start()
             appState.addLog("Audio capture started (\(format.sampleRate) Hz, \(format.channels) ch).", level: .info)
@@ -275,6 +350,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             appState.addLog("Language: \(appState.deepgramLanguage.displayName) (\(appState.deepgramLanguage.deepgramCode)).", level: .info)
             appState.addLog("Listening started.", level: .info)
         } catch {
+            isTranscriptionSessionActive = false
             isLatchedRecording = false
             activeShortcutID = nil
             appState.statusMessage = "Failed to start audio capture: \(error.localizedDescription)"
@@ -307,7 +383,6 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         deepgramClient.closeStream { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                self.appState.statusMessage = "Idle"
                 self.appState.addLog("Listening stopped.", level: .info)
                 await self.pasteFinalTranscript(shortcutID: shortcutID)
                 self.activeShortcutID = nil
@@ -337,6 +412,9 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         cancelPendingStop()
         audioCapture.stop()
         deepgramClient.disconnect()
+        pendingTranscriptionError = nil
+        isTranscriptionSessionActive = false
+        hasPlayedTranscriptionFailureSound = false
         isLatchedRecording = false
         activeShortcutID = nil
         restoreMute()
@@ -400,7 +478,10 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     }
 
     private func setSystemMute(_ mute: Bool) {
-        guard let device = defaultOutputDevice() else { return }
+        guard let device = defaultOutputDevice() else {
+            appState.addLog("Unable to set mute state: no default output device.", level: .warning)
+            return
+        }
         var value: UInt32 = mute ? 1 : 0
         let size = UInt32(MemoryLayout<UInt32>.size)
         var address = AudioObjectPropertyAddress(
@@ -408,11 +489,17 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             mScope: kAudioDevicePropertyScopeOutput,
             mElement: kAudioObjectPropertyElementMain
         )
-        AudioObjectSetPropertyData(device, &address, 0, nil, size, &value)
+        let status = AudioObjectSetPropertyData(device, &address, 0, nil, size, &value)
+        if status != noErr {
+            appState.addLog("Failed to set system mute=\(mute) (CoreAudio status \(status)).", level: .warning)
+        }
     }
 
     private func isSystemMuted() -> Bool {
-        guard let device = defaultOutputDevice() else { return false }
+        guard let device = defaultOutputDevice() else {
+            appState.addLog("Unable to read mute state: no default output device.", level: .warning)
+            return false
+        }
         var value: UInt32 = 0
         var size = UInt32(MemoryLayout<UInt32>.size)
         var address = AudioObjectPropertyAddress(
@@ -420,7 +507,11 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             mScope: kAudioDevicePropertyScopeOutput,
             mElement: kAudioObjectPropertyElementMain
         )
-        AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value)
+        let status = AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value)
+        if status != noErr {
+            appState.addLog("Failed to read system mute state (CoreAudio status \(status)).", level: .warning)
+            return false
+        }
         return value != 0
     }
 
@@ -442,51 +533,88 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         NSSound(named: name)?.play()
     }
 
-    private func playErrorSound() {
+    private func playErrorSound(force: Bool = false) {
+        guard force || appState.playSoundEffects else { return }
         NSSound(named: "Basso")?.play()
     }
 
     // MARK: - Paste with Enhancement
 
     private func pasteFinalTranscript(shortcutID: UUID?) async {
+        isTranscriptionSessionActive = false
         let finalText = appState.finalTranscript.trimmed
         let fallbackText = appState.lastTranscript.trimmed
         let rawText = finalText.isEmpty ? fallbackText : finalText
+        let transcriptionError = pendingTranscriptionError
+        pendingTranscriptionError = nil
+
         guard !rawText.isEmpty else {
-            appState.addLog("No transcript to paste.", level: .warning)
+            let reason = transcriptionError ?? TranscriptHistoryEntry.emptyTranscriptionMessage
+            appState.statusMessage = "Transcription failed."
+            appState.addLog("Transcription failed: \(reason)", level: .error)
+            appState.addTranscriptionFailureToHistory(reason: reason)
             hideOverlay()
-            playSound("Pop")
+            if transcriptionError != nil {
+                if !hasPlayedTranscriptionFailureSound {
+                    playErrorSound(force: true)
+                    hasPlayedTranscriptionFailureSound = true
+                }
+            } else {
+                playSound("Pop")
+            }
             return
         }
 
         // Enhancement via OpenRouter
         var enhancedText: String?
         var enhancementFailed = false
+        var enhancementError: String?
         if let shortcutID,
            let prompt = appState.promptContent(forShortcutID: shortcutID) {
             if !appState.hasOpenRouterCredentials {
                 let missing = appState.openRouterApiKey.trimmed.isEmpty ? "API key" : "model"
+                let reason = "OpenRouter \(missing) is not set."
                 appState.statusMessage = "Enhancement skipped: missing \(missing)."
-                appState.addLog("Enhancement skipped: OpenRouter \(missing) is not set.", level: .warning)
+                appState.addLog("Enhancement skipped: \(reason)", level: .warning)
+                enhancementError = reason
                 enhancementFailed = true
             } else {
+                let model = appState.openRouterModel.trimmed
+                let requestStart = Date()
                 appState.statusMessage = "Enhancing..."
-                appState.addLog("Sending transcript to OpenRouter for enhancement.", level: .info)
+                appState.addLog("Sending transcript to OpenRouter for enhancement (model: \(model)).", level: .info)
                 do {
                     let enhanced = try await OpenRouterClient.enhance(
                         transcript: rawText,
                         prompt: prompt,
                         apiKey: appState.openRouterApiKey.trimmed,
-                        model: appState.openRouterModel.trimmed
+                        model: model
                     )
+                    let latencyMs = Int(Date().timeIntervalSince(requestStart) * 1_000)
                     let trimmed = enhanced.trimmed
                     if !trimmed.isEmpty {
                         enhancedText = trimmed
-                        appState.addLog("Transcript enhanced successfully.", level: .info)
+                        appState.addLog("Transcript enhanced successfully (model: \(model), \(latencyMs) ms).", level: .info)
+                    } else {
+                        appState.statusMessage = "Enhancement failed. Pasting original."
+                        appState.addLog(
+                            "Enhancement failed (model: \(model), \(latencyMs) ms): OpenRouter returned empty content.",
+                            level: .error
+                        )
+                        enhancementError = "OpenRouter returned empty content."
+                        enhancementFailed = true
                     }
                 } catch {
-                    appState.statusMessage = "Enhancement failed."
-                    appState.addLog("Enhancement failed: \(error.localizedDescription)", level: .error)
+                    let latencyMs = Int(Date().timeIntervalSince(requestStart) * 1_000)
+                    let reason = error.localizedDescription.trimmed.isEmpty
+                        ? String(describing: error)
+                        : error.localizedDescription
+                    appState.statusMessage = "Enhancement failed. Pasting original."
+                    appState.addLog(
+                        "Enhancement failed (model: \(model), \(latencyMs) ms): \(reason)",
+                        level: .error
+                    )
+                    enhancementError = reason
                     enhancementFailed = true
                 }
             }
@@ -499,7 +627,22 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
         pasteboard.clearContents()
         pasteboard.setString(textToPaste, forType: .string)
-        appState.addTranscriptToHistory(rawText, enhancedText: enhancedText)
+        appState.addTranscriptToHistory(
+            rawText,
+            enhancedText: enhancedText,
+            transcriptionError: transcriptionError,
+            enhancementError: enhancementError
+        )
+        if let transcriptionError {
+            appState.addLog("Transcript completed with warning: \(transcriptionError)", level: .warning)
+            if !hasPlayedTranscriptionFailureSound {
+                playErrorSound(force: true)
+                hasPlayedTranscriptionFailureSound = true
+            }
+        }
+        if enhancementFailed {
+            appState.addLog("Pasted original transcription because enhancement failed.", level: .warning)
+        }
         appState.addLog("Transcript copied to clipboard.", level: .info)
         appState.statusMessage = "Idle"
 
