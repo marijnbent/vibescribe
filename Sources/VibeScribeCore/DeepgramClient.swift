@@ -10,17 +10,23 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
     private var isClosing = false
     private let onTranscriptEvent: (@Sendable (String, Bool) -> Void)?
     private let onLog: (@Sendable (String, LogLevel) -> Void)?
+    private let onTranscriptionError: (@Sendable (String) -> Void)?
     private var onClose: (() -> Void)?
     private var closeTimer: DispatchSourceTimer?
+    private var droppedAudioBufferCount = 0
+    private var decodeFailureCount = 0
+    private var binaryDecodeFailureCount = 0
 
     init(
         onTranscriptEvent: (@Sendable (String, Bool) -> Void)? = nil,
-        onLog: (@Sendable (String, LogLevel) -> Void)? = nil
+        onLog: (@Sendable (String, LogLevel) -> Void)? = nil,
+        onTranscriptionError: (@Sendable (String) -> Void)? = nil
     ) {
         let configuration = URLSessionConfiguration.default
         self.session = URLSession(configuration: configuration, delegate: nil, delegateQueue: nil)
         self.onTranscriptEvent = onTranscriptEvent
         self.onLog = onLog
+        self.onTranscriptionError = onTranscriptionError
         super.init()
         queue.setSpecific(key: queueKey, value: ())
     }
@@ -51,7 +57,7 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
         components.queryItems = queryItems
 
         guard let url = components.url else {
-            onLog?("Failed to build Deepgram URL.", .error)
+            reportTranscriptionError("Failed to build Deepgram URL.")
             return
         }
 
@@ -67,17 +73,26 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
         task.resume()
         onLog?("WebSocket connecting to \(url.absoluteString)", .info)
 
-        receiveLoop()
+        receiveLoop(for: task)
     }
 
     func sendAudio(buffer: AVAudioPCMBuffer) {
         let task = queue.sync { isConnected ? self.task : nil }
         guard let task else { return }
-        guard let data = AudioBufferConverter.linear16Data(from: buffer) else { return }
+        guard let data = AudioBufferConverter.linear16Data(from: buffer) else {
+            let dropCount = queue.sync { () -> Int in
+                droppedAudioBufferCount += 1
+                return droppedAudioBufferCount
+            }
+            if Self.shouldLogOccurrence(dropCount) {
+                onLog?("Dropped audio buffer during linear16 conversion (\(dropCount) total drops).", .warning)
+            }
+            return
+        }
 
         task.send(.data(data)) { [weak self] error in
             if let error {
-                self?.onLog?("WebSocket send error: \(error.localizedDescription)", .error)
+                self?.reportTranscriptionError("WebSocket send error: \(error.localizedDescription)")
             }
         }
     }
@@ -119,12 +134,11 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
         onLog?("WebSocket disconnected.", .info)
     }
 
-    private func receiveLoop() {
-        let task = queue.sync { self.task }
-        guard let task else { return }
-
+    private func receiveLoop(for task: URLSessionWebSocketTask) {
         task.receive { [weak self] result in
             guard let self else { return }
+            let isCurrentTask = self.queue.sync { self.task === task }
+            guard isCurrentTask else { return }
 
             switch result {
             case .success(let message):
@@ -134,30 +148,61 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
                 case .data(let data):
                     if let text = String(data: data, encoding: .utf8) {
                         self.handleIncoming(text: text)
+                    } else {
+                        let failureCount = self.queue.sync { () -> Int in
+                            self.binaryDecodeFailureCount += 1
+                            return self.binaryDecodeFailureCount
+                        }
+                        if Self.shouldLogOccurrence(failureCount) {
+                            self.onLog?(
+                                "Received non-UTF8 Deepgram data frame (\(data.count) bytes, \(failureCount) decode failures).",
+                                .warning
+                            )
+                        }
                     }
                 @unknown default:
                     break
                 }
             case .failure(let error):
-                let wasClosing = self.queue.sync { () -> Bool in
+                let state = self.queue.sync { () -> (wasClosing: Bool, isCurrent: Bool) in
+                    guard self.task === task else {
+                        return (false, false)
+                    }
                     self.isConnected = false
-                    return self.isClosing
+                    return (self.isClosing, true)
                 }
-                if wasClosing {
+                guard state.isCurrent else { return }
+
+                if state.wasClosing {
                     self.finishClose()
                 } else {
-                    self.onLog?("WebSocket receive error: \(error.localizedDescription)", .error)
+                    self.reportTranscriptionError("WebSocket receive error: \(error.localizedDescription)")
                 }
                 return
             }
 
-            self.receiveLoop()
+            let shouldContinue = self.queue.sync {
+                self.task === task && self.isConnected
+            }
+            if shouldContinue {
+                self.receiveLoop(for: task)
+            }
         }
     }
 
     private func handleIncoming(text: String) {
         guard let data = text.data(using: .utf8) else { return }
         guard let result = try? JSONDecoder().decode(DeepgramLiveResult.self, from: data) else {
+            let failureCount = queue.sync { () -> Int in
+                decodeFailureCount += 1
+                return decodeFailureCount
+            }
+            if Self.shouldLogOccurrence(failureCount) {
+                onLog?(
+                    "Failed to decode Deepgram message (\(failureCount) failures). Preview: \(Self.preview(text))",
+                    .warning
+                )
+            }
             return
         }
 
@@ -167,7 +212,7 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
         }
 
         if result.type == "Error", let description = result.errorDescription {
-            onLog?("Deepgram error: \(description)", .error)
+            reportTranscriptionError("Deepgram error: \(description)")
         }
     }
 
@@ -204,6 +249,21 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
         closeTimer = nil
         onLog?("WebSocket closed after CloseStream.", .info)
         callback?()
+    }
+
+    private func reportTranscriptionError(_ message: String) {
+        onLog?(message, .error)
+        onTranscriptionError?(message)
+    }
+
+    private static func shouldLogOccurrence(_ occurrence: Int) -> Bool {
+        occurrence <= 3 || occurrence % 100 == 0
+    }
+
+    private static func preview(_ text: String, maxLength: Int = 180) -> String {
+        let normalized = text.replacingOccurrences(of: "\n", with: " ").trimmed
+        guard normalized.count > maxLength else { return normalized }
+        return String(normalized.prefix(maxLength)) + "…"
     }
 }
 
