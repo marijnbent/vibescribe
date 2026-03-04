@@ -1,5 +1,5 @@
-import Foundation
 import AVFoundation
+import Foundation
 
 final class DeepgramClient: NSObject, @unchecked Sendable {
     private let session: URLSession
@@ -14,24 +14,11 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
     private let onConnectionDropped: (@Sendable (String) -> Void)?
     private var onClose: (() -> Void)?
     private var closeTimer: DispatchSourceTimer?
-    private var keepAliveTimer: DispatchSourceTimer?
     private var droppedAudioBufferCount = 0
     private var decodeFailureCount = 0
     private var binaryDecodeFailureCount = 0
 
-    // Buffered audio replay state for reconnect recovery.
-    private var bufferedAudioChunks: [Data] = []
-    private var bufferedChunkBaseIndex = 0
-    private var nextChunkToSendIndex = 0
-    private var bufferedAudioBytes = 0
-    private var hasLoggedLargeBufferWarning = false
-    private var bytesPerSecond = 32_000
-
-    private let closeTimeoutSeconds: TimeInterval = 6.0
-    private let keepAliveIntervalSeconds: TimeInterval = 4.0
-    private let replayOverlapSeconds: TimeInterval = 3.0
-    private let sentAudioRetentionSeconds: TimeInterval = 45.0
-    private let largeBufferWarningBytes = 64 * 1024 * 1024
+    private let closeTimeoutSeconds: TimeInterval = 1.0
 
     init(
         onTranscriptEvent: (@Sendable (String, Bool) -> Void)? = nil,
@@ -54,7 +41,7 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
         format: AudioStreamFormat,
         language: DeepgramLanguage
     ) {
-        disconnect(preserveBufferedAudio: true, logDisconnection: false)
+        disconnect(logDisconnection: false)
 
         var components = URLComponents()
         components.scheme = "wss"
@@ -87,18 +74,11 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
             self.task = task
             self.isConnected = true
             self.isClosing = false
-            self.bytesPerSecond = max(1, format.sampleRate * format.channels * 2)
             self.closeTimer?.cancel()
             self.closeTimer = nil
-            self.startKeepAliveOnQueue(for: task)
         }
         task.resume()
         onLog?("WebSocket connecting to \(url.absoluteString)", .info)
-
-        // If audio was buffered while disconnected, replay it as soon as the new socket is up.
-        queue.async { [weak self] in
-            self?.flushBufferedAudioOnQueue(for: task)
-        }
 
         receiveLoop(for: task)
     }
@@ -117,11 +97,18 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
 
         queue.async { [weak self] in
             guard let self else { return }
-            _ = self.appendBufferedChunkOnQueue(data)
-            self.logLargeBufferWarningIfNeededOnQueue()
-
             guard let task = self.task, self.isConnected, !self.isClosing else { return }
-            self.flushBufferedAudioOnQueue(for: task)
+
+            task.send(.data(data)) { [weak self] error in
+                guard let self, let error else { return }
+                guard !Self.isCancellationError(error) else { return }
+
+                self.queue.async { [weak self] in
+                    guard let self else { return }
+                    let message = "WebSocket send error: \(error.localizedDescription)"
+                    self.handleUnexpectedConnectionDropOnQueue(message, task: task)
+                }
+            }
         }
     }
 
@@ -129,7 +116,6 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
         let task = queue.sync { self.task }
         guard let task else {
             queue.sync {
-                clearBufferedAudioOnQueue()
                 onClose = nil
                 isClosing = false
                 isConnected = false
@@ -192,23 +178,19 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
     }
 
     func disconnect() {
-        disconnect(preserveBufferedAudio: false, logDisconnection: true)
+        disconnect(logDisconnection: true)
     }
 
-    private func disconnect(preserveBufferedAudio: Bool, logDisconnection: Bool) {
+    private func disconnect(logDisconnection: Bool) {
         let hadConnection = queue.sync { () -> Bool in
             let hadConnection = isConnected || isClosing || task != nil
             isConnected = false
             isClosing = false
             closeTimer?.cancel()
             closeTimer = nil
-            cancelKeepAliveLocked()
             task?.cancel(with: .goingAway, reason: nil)
             task = nil
             onClose = nil
-            if !preserveBufferedAudio {
-                clearBufferedAudioOnQueue()
-            }
             return hadConnection
         }
         if hadConnection && logDisconnection {
@@ -290,13 +272,6 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
             return
         }
 
-        // Any valid server message implies the socket is alive, so try flushing backlog.
-        queue.async { [weak self] in
-            guard let self else { return }
-            guard self.task === task, self.isConnected, !self.isClosing else { return }
-            self.flushBufferedAudioOnQueue(for: task)
-        }
-
         if let transcript = result.transcript, !transcript.isEmpty {
             let isFinal = (result.is_final ?? false) || (result.speech_final ?? false) || (result.from_finalize ?? false)
             onTranscriptEvent?(transcript, isFinal)
@@ -306,10 +281,8 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
             reportTranscriptionError("Deepgram error: \(description)")
         }
 
-        // Deepgram can signal finalization before actively closing the socket.
-        // Finish immediately when that signal arrives instead of waiting for timeout.
         let shouldFinishAfterFinalize = queue.sync {
-            isClosing && ((result.from_finalize ?? false) || result.type == "Finalize")
+            self.task === task && isClosing && ((result.from_finalize ?? false) || result.type == "Finalize")
         }
         if shouldFinishAfterFinalize {
             finishClose()
@@ -322,123 +295,8 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
 
         isConnected = false
         self.task = nil
-        cancelKeepAliveLocked()
-        rewindReplayCursorOnConnectionDropOnQueue()
         reportTranscriptionError(message)
         onConnectionDropped?(message)
-    }
-
-    private func appendBufferedChunkOnQueue(_ data: Data) -> Int {
-        let chunkIndex = bufferedChunkBaseIndex + bufferedAudioChunks.count
-        bufferedAudioChunks.append(data)
-        bufferedAudioBytes += data.count
-        return chunkIndex
-    }
-
-    private func flushBufferedAudioOnQueue(for task: URLSessionWebSocketTask) {
-        guard self.task === task, isConnected, !isClosing else { return }
-
-        let endIndex = bufferedChunkBaseIndex + bufferedAudioChunks.count
-        guard nextChunkToSendIndex < endIndex else {
-            pruneSentAudioBufferOnQueue()
-            return
-        }
-
-        let startIndex = nextChunkToSendIndex
-        for chunkIndex in startIndex..<endIndex {
-            guard let offset = bufferOffset(for: chunkIndex) else { continue }
-            sendBufferedChunkOnQueue(bufferedAudioChunks[offset], task: task)
-        }
-        nextChunkToSendIndex = endIndex
-
-        if endIndex - startIndex > 1 {
-            onLog?("Replayed \(endIndex - startIndex) buffered audio chunks after reconnect.", .warning)
-        }
-
-        pruneSentAudioBufferOnQueue()
-    }
-
-    private func sendBufferedChunkOnQueue(_ chunk: Data, task: URLSessionWebSocketTask) {
-        task.send(.data(chunk)) { [weak self] error in
-            guard let self, let error else { return }
-            guard !Self.isCancellationError(error) else { return }
-
-            self.queue.async { [weak self] in
-                guard let self else { return }
-                let message = "WebSocket send error: \(error.localizedDescription)"
-                self.handleUnexpectedConnectionDropOnQueue(message, task: task)
-            }
-        }
-    }
-
-    private func rewindReplayCursorOnConnectionDropOnQueue() {
-        let lookbackBytes = max(Int(Double(bytesPerSecond) * replayOverlapSeconds), bytesPerSecond)
-        let rewindIndex = indexForLookbackBytes(before: nextChunkToSendIndex, lookbackBytes: lookbackBytes)
-        nextChunkToSendIndex = max(bufferedChunkBaseIndex, rewindIndex)
-    }
-
-    private func pruneSentAudioBufferOnQueue() {
-        let keepBytes = max(
-            Int(Double(bytesPerSecond) * sentAudioRetentionSeconds),
-            Int(Double(bytesPerSecond) * replayOverlapSeconds)
-        )
-        let minimumIndexToKeep = indexForLookbackBytes(before: nextChunkToSendIndex, lookbackBytes: keepBytes)
-        let dropCount = minimumIndexToKeep - bufferedChunkBaseIndex
-        guard dropCount > 0 else { return }
-
-        var droppedBytes = 0
-        for chunk in bufferedAudioChunks.prefix(dropCount) {
-            droppedBytes += chunk.count
-        }
-
-        bufferedAudioChunks.removeFirst(dropCount)
-        bufferedChunkBaseIndex += dropCount
-        bufferedAudioBytes = max(0, bufferedAudioBytes - droppedBytes)
-
-        if nextChunkToSendIndex < bufferedChunkBaseIndex {
-            nextChunkToSendIndex = bufferedChunkBaseIndex
-        }
-
-        if hasLoggedLargeBufferWarning && bufferedAudioBytes < largeBufferWarningBytes / 2 {
-            hasLoggedLargeBufferWarning = false
-        }
-    }
-
-    private func indexForLookbackBytes(before upperBoundIndex: Int, lookbackBytes: Int) -> Int {
-        let upperBound = min(upperBoundIndex, bufferedChunkBaseIndex + bufferedAudioChunks.count)
-        var index = upperBound
-        var remaining = lookbackBytes
-
-        while index > bufferedChunkBaseIndex, remaining > 0 {
-            let offset = index - bufferedChunkBaseIndex - 1
-            remaining -= bufferedAudioChunks[offset].count
-            index -= 1
-        }
-
-        return index
-    }
-
-    private func bufferOffset(for chunkIndex: Int) -> Int? {
-        let offset = chunkIndex - bufferedChunkBaseIndex
-        guard offset >= 0, offset < bufferedAudioChunks.count else { return nil }
-        return offset
-    }
-
-    private func logLargeBufferWarningIfNeededOnQueue() {
-        guard bufferedAudioBytes >= largeBufferWarningBytes else { return }
-        guard !hasLoggedLargeBufferWarning else { return }
-
-        hasLoggedLargeBufferWarning = true
-        let bufferedMB = Int(Double(bufferedAudioBytes) / 1_048_576)
-        onLog?("Buffered reconnect audio has grown to \(bufferedMB) MB while waiting for Deepgram recovery.", .warning)
-    }
-
-    private func clearBufferedAudioOnQueue() {
-        bufferedAudioChunks.removeAll(keepingCapacity: false)
-        bufferedChunkBaseIndex = 0
-        nextChunkToSendIndex = 0
-        bufferedAudioBytes = 0
-        hasLoggedLargeBufferWarning = false
     }
 
     private func scheduleCloseTimeout() {
@@ -463,32 +321,6 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
         timer.activate()
     }
 
-    private func startKeepAliveOnQueue(for task: URLSessionWebSocketTask) {
-        cancelKeepAliveLocked()
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + keepAliveIntervalSeconds, repeating: keepAliveIntervalSeconds)
-        timer.setEventHandler { [weak self] in
-            guard let self else { return }
-            guard self.task === task, self.isConnected, !self.isClosing else { return }
-            task.send(.string("{\"type\":\"KeepAlive\"}")) { [weak self] error in
-                guard let self, let error else { return }
-                let shouldLog = self.queue.sync {
-                    self.task === task && self.isConnected && !self.isClosing
-                }
-                if shouldLog && !Self.isCancellationError(error) {
-                    self.onLog?("Failed to send KeepAlive: \(error.localizedDescription)", .warning)
-                }
-            }
-        }
-        keepAliveTimer = timer
-        timer.activate()
-    }
-
-    private func cancelKeepAliveLocked() {
-        keepAliveTimer?.cancel()
-        keepAliveTimer = nil
-    }
-
     private func finishClose() {
         if DispatchQueue.getSpecific(key: queueKey) != nil {
             finishCloseOnQueue()
@@ -509,8 +341,6 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
         isConnected = false
         closeTimer?.cancel()
         closeTimer = nil
-        cancelKeepAliveLocked()
-        clearBufferedAudioOnQueue()
         onLog?("WebSocket closed after CloseStream.", .info)
         callback?()
     }

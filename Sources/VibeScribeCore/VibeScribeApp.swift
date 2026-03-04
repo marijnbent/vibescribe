@@ -8,6 +8,12 @@ import SwiftUI
 
 @MainActor
 public final class VibeScribeApp: NSObject, NSApplicationDelegate {
+    private enum RecordingLifecycle {
+        case idle
+        case recording
+        case finalizing
+    }
+
     public static func main() {
         let app = NSApplication.shared
         let delegate = VibeScribeApp()
@@ -23,9 +29,9 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private var audioCapture: AudioCaptureController!
     private var deepgramClient: DeepgramClient!
     private var stopWorkItem: DispatchWorkItem?
-    private var isLatchedRecording = false
+    private var recordingLifecycle: RecordingLifecycle = .idle
+    private var recordingOwnership: RecordingOwnership?
     private var savedMuteState: Bool?
-    private var activeShortcutID: UUID?
     private var escGlobalMonitor: Any?
     private var escLocalMonitor: Any?
     private var shortcutGlobalMonitor: Any?
@@ -35,7 +41,6 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private var lastShortcutEventKeyCode: UInt16 = 0
     private var lastShortcutEventModifiers: NSEvent.ModifierFlags = []
     private var pendingTranscriptionError: String?
-    private var isTranscriptionSessionActive = false
     private var hasPlayedTranscriptionFailureSound = false
     private var recordingStartTime: TimeInterval = 0
     private var currentRecordingFormat: AudioStreamFormat?
@@ -46,7 +51,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private let clipboardRestoreDelay: TimeInterval = 0.2
     private let shortcutEventDedupWindow: TimeInterval = 0.02
     private let deepgramReconnectBaseDelaySeconds: TimeInterval = 0.4
-    private let deepgramReconnectMaxAttempts = 5
+    private let deepgramReconnectMaxAttempts = DeepgramReconnectPolicy.maxAttempts
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -75,11 +80,11 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
                     guard let self else { return }
                     let isFirstErrorInSession = self.pendingTranscriptionError == nil
                     self.pendingTranscriptionError = message
-                    if self.appState.isRecording {
+                    if self.recordingLifecycle != .idle {
                         self.appState.statusMessage = "Transcription issue detected."
                     }
                     if isFirstErrorInSession,
-                       self.isTranscriptionSessionActive,
+                       self.recordingLifecycle != .idle,
                        !self.hasPlayedTranscriptionFailureSound {
                         self.playErrorSound(force: true)
                         self.hasPlayedTranscriptionFailureSound = true
@@ -213,6 +218,15 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     // MARK: - Mode-Based Key Handling
 
     private func handleKeyDown(shortcutID: UUID, mode: ShortcutMode) {
+        guard recordingLifecycle != .finalizing else { return }
+        if ShortcutOwnershipPolicy.shouldIgnore(
+            shortcutID: shortcutID,
+            isRecording: recordingLifecycle == .recording,
+            ownership: recordingOwnership
+        ) {
+            return
+        }
+
         switch mode {
         case .hold:
             handleHoldKeyDown(shortcutID: shortcutID)
@@ -224,6 +238,15 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     }
 
     private func handleKeyUp(shortcutID: UUID, mode: ShortcutMode) {
+        guard recordingLifecycle != .finalizing else { return }
+        if ShortcutOwnershipPolicy.shouldIgnore(
+            shortcutID: shortcutID,
+            isRecording: recordingLifecycle == .recording,
+            ownership: recordingOwnership
+        ) {
+            return
+        }
+
         switch mode {
         case .hold:
             handleHoldKeyUp(shortcutID: shortcutID)
@@ -237,13 +260,13 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     // MARK: Hold Mode
 
     private func handleHoldKeyDown(shortcutID: UUID) {
-        guard !appState.isRecording else { return }
-        activeShortcutID = shortcutID
-        startRecording()
+        guard recordingLifecycle == .idle else { return }
+        startRecording(ownerShortcutID: shortcutID, ownerMode: .hold, isLatched: false)
     }
 
     private func handleHoldKeyUp(shortcutID: UUID) {
-        guard activeShortcutID == shortcutID else { return }
+        guard ShortcutOwnershipPolicy.isOwner(shortcutID: shortcutID, ownership: recordingOwnership) else { return }
+        guard recordingLifecycle == .recording else { return }
         let elapsed = CACurrentMediaTime() - recordingStartTime
         if elapsed < clickHoldThreshold {
             cancelRecording()
@@ -255,39 +278,42 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     // MARK: Click Mode
 
     private func handleClickKeyDown(shortcutID: UUID) {
-        if appState.isRecording && activeShortcutID == shortcutID {
-            isLatchedRecording = false
+        if recordingLifecycle == .recording {
+            guard ShortcutOwnershipPolicy.isOwner(shortcutID: shortcutID, ownership: recordingOwnership) else { return }
             stopRecording()
             return
         }
-        activeShortcutID = shortcutID
-        isLatchedRecording = true
-        startRecording()
+        guard recordingLifecycle == .idle else { return }
+        startRecording(ownerShortcutID: shortcutID, ownerMode: .click, isLatched: true)
     }
 
     // MARK: Both Mode (Hold + Click)
 
     private func handleBothKeyDown(shortcutID: UUID) {
-        if isLatchedRecording && activeShortcutID == shortcutID {
-            isLatchedRecording = false
+        if recordingLifecycle == .recording {
+            guard var ownership = recordingOwnership, ownership.ownerShortcutID == shortcutID else { return }
+            guard ownership.isLatched else { return }
+            ownership.isLatched = false
+            recordingOwnership = ownership
             stopRecording()
             return
         }
 
-        if !appState.isRecording {
-            activeShortcutID = shortcutID
-            cancelPendingStop()
-            startRecording()
-        }
+        guard recordingLifecycle == .idle else { return }
+        cancelPendingStop()
+        startRecording(ownerShortcutID: shortcutID, ownerMode: .both, isLatched: false)
     }
 
     private func handleBothKeyUp(shortcutID: UUID) {
-        guard activeShortcutID == shortcutID else { return }
-        if isLatchedRecording { return }
-        guard appState.isRecording else { return }
+        guard var ownership = recordingOwnership else { return }
+        guard ownership.ownerShortcutID == shortcutID else { return }
+        guard recordingLifecycle == .recording else { return }
+        if ownership.isLatched { return }
+
         let elapsed = CACurrentMediaTime() - recordingStartTime
         if elapsed < clickHoldThreshold {
-            isLatchedRecording = true
+            ownership.isLatched = true
+            recordingOwnership = ownership
         } else {
             scheduleStopRecording()
         }
@@ -297,32 +323,20 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
     private func handleAudioInputConfigurationChanged() {
         appState.addLog("Audio input changed. Capture engine reset.", level: .warning)
-        guard appState.isRecording else {
+        guard recordingLifecycle != .idle else {
             appState.statusMessage = "Audio input changed. Ready."
             return
         }
 
-        cancelPendingStop()
-        isLatchedRecording = false
-        activeShortcutID = nil
-        pendingTranscriptionError = nil
-        isTranscriptionSessionActive = false
-        hasPlayedTranscriptionFailureSound = false
-        cancelDeepgramReconnect()
-        currentRecordingFormat = nil
-        restoreMute()
-        deepgramClient.disconnect()
-        appState.isRecording = false
-        appState.overlayVisible = false
-        overlayWindowController.hide()
+        finishActiveSession(disconnectDeepgram: true, clearPendingTranscriptionError: true)
         appState.statusMessage = "Input changed. Ready."
         appState.addLog("Recording stopped because the input device changed.", level: .warning)
     }
 
     // MARK: - Recording
 
-    private func startRecording() {
-        guard !appState.isRecording else { return }
+    private func startRecording(ownerShortcutID: UUID, ownerMode: ShortcutMode, isLatched: Bool) {
+        guard recordingLifecycle == .idle else { return }
 
         let apiKey = appState.apiKey.trimmed
         guard !apiKey.isEmpty else {
@@ -334,13 +348,21 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
         do {
             pendingTranscriptionError = nil
-            isTranscriptionSessionActive = true
             hasPlayedTranscriptionFailureSound = false
             cancelDeepgramReconnect()
             deepgramReconnectAttempt = 0
             appState.resetTranscript()
             let format = try audioCapture.start()
             currentRecordingFormat = format
+            recordingStartTime = CACurrentMediaTime()
+            recordingOwnership = RecordingOwnership(
+                ownerShortcutID: ownerShortcutID,
+                ownerMode: ownerMode,
+                isLatched: isLatched,
+                recordingStartedAt: recordingStartTime,
+                sessionID: UUID()
+            )
+            recordingLifecycle = .recording
             appState.addLog("Audio capture started (\(format.sampleRate) Hz, \(format.channels) ch).", level: .info)
             deepgramClient.connect(apiKey: apiKey, format: format, language: appState.deepgramLanguage)
 
@@ -352,7 +374,6 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
                 }
             }
 
-            recordingStartTime = CACurrentMediaTime()
             appState.isRecording = true
             appState.overlayLabel = "Listening"
             appState.overlayVisible = true
@@ -365,28 +386,27 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             appState.addLog("Language: \(appState.deepgramLanguage.displayName) (\(appState.deepgramLanguage.deepgramCode)).", level: .info)
             appState.addLog("Listening started.", level: .info)
         } catch {
-            isTranscriptionSessionActive = false
-            isLatchedRecording = false
-            activeShortcutID = nil
+            recordingLifecycle = .idle
+            recordingOwnership = nil
             appState.statusMessage = "Failed to start audio capture: \(error.localizedDescription)"
             appState.addLog("Failed to start audio capture: \(error.localizedDescription)", level: .error)
         }
     }
 
     private func stopRecording() {
-        guard appState.isRecording else { return }
+        guard recordingLifecycle == .recording else { return }
 
         cancelPendingStop()
-        isLatchedRecording = false
         cancelDeepgramReconnect()
         audioCapture.stop()
+        recordingLifecycle = .finalizing
         appState.isRecording = false
         appState.audioLevel = 0
         appState.statusMessage = "Finalizing..."
 
         restoreMute()
 
-        let shortcutID = activeShortcutID
+        let shortcutID = recordingOwnership?.ownerShortcutID
         let hasEnhancement = shortcutID.flatMap { appState.promptContent(forShortcutID: $0) } != nil
 
         if hasEnhancement {
@@ -401,9 +421,8 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.appState.addLog("Listening stopped.", level: .info)
                 await self.pasteFinalTranscript(shortcutID: shortcutID)
-                self.activeShortcutID = nil
-                self.currentRecordingFormat = nil
-                self.deepgramReconnectAttempt = 0
+                self.finishActiveSession(disconnectDeepgram: false, clearPendingTranscriptionError: false)
+                self.appState.statusMessage = "Idle"
             }
         }
     }
@@ -413,7 +432,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         if wasRecovering {
             cancelDeepgramReconnect()
             deepgramReconnectAttempt = 0
-            if appState.isRecording {
+            if recordingLifecycle == .recording {
                 appState.statusMessage = "Listening..."
             }
             if pendingTranscriptionError != nil {
@@ -426,14 +445,14 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     }
 
     private func handleDeepgramConnectionDropped(reason: String) {
-        guard appState.isRecording, isTranscriptionSessionActive else { return }
+        guard recordingLifecycle == .recording else { return }
         guard currentRecordingFormat != nil else { return }
         guard deepgramReconnectWorkItem == nil else { return }
 
         // Preserve the latest interim transcript so mid-utterance drops do not lose already recognized speech.
         appState.finalizeLatestInterimTranscript()
 
-        if deepgramReconnectAttempt >= deepgramReconnectMaxAttempts {
+        if !DeepgramReconnectPolicy.shouldRetry(currentAttempt: deepgramReconnectAttempt) {
             appState.statusMessage = "Connection lost. Release hotkey to finalize."
             appState.addLog(
                 "Deepgram reconnect limit reached (\(deepgramReconnectMaxAttempts) attempts). Last error: \(reason)",
@@ -444,7 +463,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
         deepgramReconnectAttempt += 1
         let attempt = deepgramReconnectAttempt
-        let delay = min(4.0, deepgramReconnectBaseDelaySeconds * pow(2.0, Double(attempt - 1)))
+        let delay = deepgramReconnectBaseDelaySeconds
         let delayText = String(format: "%.1f", delay)
         appState.statusMessage = "Connection hiccup. Recovering..."
         appState.addLog(
@@ -456,7 +475,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 guard let self else { return }
                 self.deepgramReconnectWorkItem = nil
-                guard self.appState.isRecording, self.isTranscriptionSessionActive else { return }
+                guard self.recordingLifecycle == .recording else { return }
                 guard let format = self.currentRecordingFormat else { return }
                 let apiKey = self.appState.apiKey.trimmed
                 guard !apiKey.isEmpty else { return }
@@ -496,27 +515,35 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         deepgramReconnectWorkItem = nil
     }
 
-    // MARK: - Cancel Recording
-
-    private func cancelRecording() {
-        guard appState.isRecording else { return }
-
+    private func finishActiveSession(disconnectDeepgram: Bool, clearPendingTranscriptionError: Bool) {
         cancelPendingStop()
         cancelDeepgramReconnect()
         audioCapture.stop()
-        deepgramClient.disconnect()
-        pendingTranscriptionError = nil
-        isTranscriptionSessionActive = false
-        hasPlayedTranscriptionFailureSound = false
+        if disconnectDeepgram {
+            deepgramClient.disconnect()
+        }
+
+        recordingLifecycle = .idle
+        recordingOwnership = nil
         currentRecordingFormat = nil
         deepgramReconnectAttempt = 0
-        isLatchedRecording = false
-        activeShortcutID = nil
         restoreMute()
         appState.isRecording = false
         appState.audioLevel = 0
-        appState.overlayVisible = false
-        overlayWindowController.hide()
+        hideOverlay()
+
+        if clearPendingTranscriptionError {
+            pendingTranscriptionError = nil
+            hasPlayedTranscriptionFailureSound = false
+        }
+    }
+
+    // MARK: - Cancel Recording
+
+    private func cancelRecording() {
+        guard recordingLifecycle != .idle else { return }
+
+        finishActiveSession(disconnectDeepgram: true, clearPendingTranscriptionError: true)
         playSound("Pop")
         appState.statusMessage = "Cancelled."
         appState.addLog("Recording cancelled.", level: .info)
@@ -636,7 +663,6 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     // MARK: - Paste with Enhancement
 
     private func pasteFinalTranscript(shortcutID: UUID?) async {
-        isTranscriptionSessionActive = false
         let finalText = appState.finalTranscript.trimmed
         let fallbackText = appState.lastTranscript.trimmed
         let rawText = finalText.isEmpty ? fallbackText : finalText
