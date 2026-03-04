@@ -147,11 +147,30 @@ struct MainView: View {
                                 Spacer()
                             }
 
-                            if entry.enhancedText != nil {
-                                historyRow(label: "Original", text: entry.text, entryID: entry.id)
-                                historyRow(label: "Enhanced", text: entry.enhancedText!, entryID: entry.id)
-                            } else {
-                                historyRow(label: nil, text: entry.text, entryID: entry.id)
+                            if let transcriptionError = entry.transcriptionError {
+                                issueRow(
+                                    label: "Transcription",
+                                    message: transcriptionError,
+                                    showsIcon: entry.shouldShowTranscriptionWarningIcon
+                                )
+                            }
+
+                            if let enhancementError = entry.enhancementError {
+                                issueRow(
+                                    label: "Enhancement",
+                                    message: enhancementError
+                                )
+                            }
+
+                            let original = entry.text.trimmed
+                            let enhanced = entry.enhancedText?.trimmed ?? ""
+                            if !original.isEmpty, !enhanced.isEmpty {
+                                historyRow(label: "Original", text: original, entryID: entry.id)
+                                historyRow(label: "Enhanced", text: enhanced, entryID: entry.id)
+                            } else if !enhanced.isEmpty {
+                                historyRow(label: "Enhanced", text: enhanced, entryID: entry.id)
+                            } else if !original.isEmpty {
+                                historyRow(label: nil, text: original, entryID: entry.id)
                             }
                         }
                     }
@@ -263,6 +282,24 @@ struct MainView: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+    }
+
+    private func issueRow(label: String, message: String, showsIcon: Bool = true) -> some View {
+        HStack(alignment: .top, spacing: showsIcon ? 6 : 0) {
+            if showsIcon {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                Text(message)
+                    .font(.caption)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
     }
 }
 
