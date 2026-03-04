@@ -16,6 +16,7 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
     private var droppedAudioBufferCount = 0
     private var decodeFailureCount = 0
     private var binaryDecodeFailureCount = 0
+    private let closeTimeoutSeconds: TimeInterval = 1.0
 
     init(
         onTranscriptEvent: (@Sendable (String, Bool) -> Void)? = nil,
@@ -116,10 +117,22 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
 
         let closeMessage = "{\"type\":\"CloseStream\"}"
         task.send(.string(closeMessage)) { [weak self] error in
+            guard let self else { return }
             if let error {
-                self?.onLog?("Failed to send CloseStream: \(error.localizedDescription)", .error)
+                let shouldIgnore = self.queue.sync {
+                    self.task !== task || !self.isClosing
+                }
+                if shouldIgnore || Self.isCancellationError(error) {
+                    return
+                }
+                self.onLog?("Failed to send CloseStream: \(error.localizedDescription)", .error)
             } else {
-                self?.onLog?("Sent CloseStream to Deepgram.", .info)
+                let shouldLogSuccess = self.queue.sync {
+                    self.task === task && self.isClosing
+                }
+                if shouldLogSuccess {
+                    self.onLog?("Sent CloseStream to Deepgram.", .info)
+                }
             }
         }
 
@@ -191,7 +204,7 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
             }
 
             let shouldContinue = self.queue.sync {
-                self.task === task && self.isConnected
+                self.task === task && (self.isConnected || self.isClosing)
             }
             if shouldContinue {
                 self.receiveLoop(for: task)
@@ -223,12 +236,21 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
         if result.type == "Error", let description = result.errorDescription {
             reportTranscriptionError("Deepgram error: \(description)")
         }
+
+        // Deepgram can signal finalization before actively closing the socket.
+        // Finish immediately when that signal arrives instead of waiting for timeout.
+        let shouldFinishAfterFinalize = queue.sync {
+            isClosing && ((result.from_finalize ?? false) || result.type == "Finalize")
+        }
+        if shouldFinishAfterFinalize {
+            finishClose()
+        }
     }
 
     private func scheduleCloseTimeout() {
         closeTimer?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 2.0)
+        timer.schedule(deadline: .now() + closeTimeoutSeconds)
         timer.setEventHandler { [weak self] in
             self?.finishClose()
         }
@@ -273,6 +295,14 @@ final class DeepgramClient: NSObject, @unchecked Sendable {
         let normalized = text.replacingOccurrences(of: "\n", with: " ").trimmed
         guard normalized.count > maxLength else { return normalized }
         return String(normalized.prefix(maxLength)) + "…"
+    }
+
+    private static func isCancellationError(_ error: Error) -> Bool {
+        if let urlError = error as? URLError {
+            return urlError.code == .cancelled
+        }
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
     }
 }
 
