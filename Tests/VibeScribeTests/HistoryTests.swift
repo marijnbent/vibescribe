@@ -180,6 +180,24 @@ final class HistoryTests: XCTestCase {
         XCTAssertFalse(entry.displayText.contains("Four"))
     }
 
+    func testEmptyTranscriptionNoticeHidesWarningIcon() {
+        let entry = TranscriptHistoryEntry(
+            timestamp: Date(),
+            text: "",
+            transcriptionError: TranscriptHistoryEntry.emptyTranscriptionMessage
+        )
+        XCTAssertFalse(entry.shouldShowTranscriptionWarningIcon)
+    }
+
+    func testTranscriptionErrorShowsWarningIcon() {
+        let entry = TranscriptHistoryEntry(
+            timestamp: Date(),
+            text: "",
+            transcriptionError: "WebSocket receive error."
+        )
+        XCTAssertTrue(entry.shouldShowTranscriptionWarningIcon)
+    }
+
     // MARK: - HistoryLimit Enum
 
     func testHistoryLimitDisplayNames() {

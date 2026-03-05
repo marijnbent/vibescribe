@@ -57,6 +57,26 @@ enum ShortcutMode: String, Codable, CaseIterable, Identifiable {
         }
     }
 
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        if rawValue == "doubleClick" {
+            self = .click
+            return
+        }
+        guard let mode = Self(rawValue: rawValue) else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Cannot initialize ShortcutMode from invalid value \(rawValue)"
+            )
+        }
+        self = mode
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 struct ShortcutConfig: Codable, Identifiable, Equatable {
@@ -66,7 +86,7 @@ struct ShortcutConfig: Codable, Identifiable, Equatable {
     var promptID: UUID?
 
     static func makeDefault() -> ShortcutConfig {
-        ShortcutConfig(id: UUID(), key: .rightOption, mode: .hold)
+        ShortcutConfig(id: UUID(), key: .rightOption, mode: .both)
     }
 }
 

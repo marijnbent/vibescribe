@@ -21,38 +21,19 @@ final class HotkeyListener {
     var onKeyDown: (() -> Void)?
     var onKeyUp: (() -> Void)?
 
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
-
     init(hotkey: Hotkey) {
         self.hotkey = hotkey
     }
 
     func start() {
-        stop()
-
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.handle(event: event)
-        }
-
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.handle(event: event)
-            return event
-        }
+        // Monitor installation is handled centrally in VibeScribeApp.
     }
 
     func stop() {
-        if let globalMonitor {
-            NSEvent.removeMonitor(globalMonitor)
-        }
-        if let localMonitor {
-            NSEvent.removeMonitor(localMonitor)
-        }
-        globalMonitor = nil
-        localMonitor = nil
+        // Monitor removal is handled centrally in VibeScribeApp.
     }
 
-    private func handle(event: NSEvent) {
+    func handle(event: NSEvent) {
         guard event.keyCode == hotkey.keyCode else { return }
         if hotkey.isModifierActive(event) {
             onKeyDown?()

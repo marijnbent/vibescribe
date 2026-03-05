@@ -13,13 +13,17 @@ final class AppState: ObservableObject {
     private static let openRouterApiKeyKey = "VibeScribe.OpenRouterApiKey"
     private static let openRouterModelKey = "VibeScribe.OpenRouterModel"
     private static let promptsKey = "VibeScribe.Prompts"
+    private static let legacyEnhancementPromptsKey = "VibeScribe.EnhancementPrompts"
     private static let escToCancelRecordingKey = "VibeScribe.EscToCancelRecording"
     private static let playSoundEffectsKey = "VibeScribe.PlaySoundEffects"
     private static let muteMediaDuringRecordingKey = "VibeScribe.MuteMediaDuringRecording"
+    private static let restoreClipboardAfterPasteKey = "VibeScribe.RestoreClipboardAfterPaste"
+    private static let overlayPositionKey = "VibeScribe.OverlayPosition"
     private static let accessibilityPromptDelayNanoseconds: UInt64 = 500_000_000
+    private static let maxLogEntries = 1_000
 
-    @Published var isRecording = false
-    @Published var statusMessage = "Idle"
+    @Published var recordingPhase: RecordingPhase = .idle
+    @Published var appStatus: AppStatus = .idle
     @Published var lastTranscript = ""
     @Published var finalTranscript = ""
     @Published var logs: [LogEntry] = []
@@ -27,9 +31,18 @@ final class AppState: ObservableObject {
     @Published var overlayPulseID = UUID()
     @Published var overlayVisible = false
     @Published var overlayLabel = "Listening"
+    @Published var audioLevel: CGFloat = 0
     @Published var microphonePermission: PermissionStatus = .notDetermined
     @Published var accessibilityPermission: PermissionStatus = .notDetermined
     @Published var selectedTab: SettingsTab = .general
+
+    var isRecording: Bool {
+        recordingPhase == .recording
+    }
+
+    var statusMessage: String {
+        appStatus.message
+    }
 
     @Published var apiKey: String {
         didSet {
@@ -87,6 +100,18 @@ final class AppState: ObservableObject {
         }
     }
 
+    @Published var restoreClipboardAfterPaste: Bool {
+        didSet {
+            UserDefaults.standard.set(restoreClipboardAfterPaste, forKey: Self.restoreClipboardAfterPasteKey)
+        }
+    }
+
+    @Published var overlayPosition: OverlayPosition {
+        didSet {
+            UserDefaults.standard.set(overlayPosition.rawValue, forKey: Self.overlayPositionKey)
+        }
+    }
+
     @Published var deepgramLanguage: DeepgramLanguage {
         didSet {
             UserDefaults.standard.set(deepgramLanguage.rawValue, forKey: Self.deepgramLanguageKey)
@@ -105,6 +130,9 @@ final class AppState: ObservableObject {
         escToCancelRecording = (UserDefaults.standard.object(forKey: Self.escToCancelRecordingKey) as? Bool) ?? true
         playSoundEffects = (UserDefaults.standard.object(forKey: Self.playSoundEffectsKey) as? Bool) ?? false
         muteMediaDuringRecording = (UserDefaults.standard.object(forKey: Self.muteMediaDuringRecordingKey) as? Bool) ?? false
+        restoreClipboardAfterPaste = (UserDefaults.standard.object(forKey: Self.restoreClipboardAfterPasteKey) as? Bool) ?? false
+        let savedPosition = UserDefaults.standard.string(forKey: Self.overlayPositionKey)
+        overlayPosition = savedPosition.flatMap(OverlayPosition.init(rawValue:)) ?? .top
         let savedLanguage = UserDefaults.standard.string(forKey: Self.deepgramLanguageKey)
         deepgramLanguage = savedLanguage.flatMap(DeepgramLanguage.init(rawValue:)) ?? .automatic
         let savedLimit = UserDefaults.standard.integer(forKey: Self.historyLimitKey)
@@ -126,6 +154,7 @@ final class AppState: ObservableObject {
             prompts = decoded
         } else {
             prompts = []
+            migrateLegacyEnhancementPrompts()
         }
 
         refreshPermissions()
@@ -148,15 +177,45 @@ final class AppState: ObservableObject {
         }
     }
 
-    func addLog(_ message: String, level: LogLevel = .info) {
-        logs.append(LogEntry(timestamp: Date(), level: level, message: message))
+    func finalizeLatestInterimTranscript() {
+        let trimmed = lastTranscript.trimmed
+        guard !trimmed.isEmpty else { return }
+        if transcriptSegments.last != trimmed {
+            transcriptSegments.append(trimmed)
+            finalTranscript = transcriptSegments.joined(separator: " ")
+        }
     }
 
-    func addTranscriptToHistory(_ text: String, enhancedText: String? = nil) {
+    func addLog(_ message: String, level: LogLevel = .info) {
+        logs.append(LogEntry(timestamp: Date(), level: level, message: message))
+        if logs.count > Self.maxLogEntries {
+            logs.removeFirst(logs.count - Self.maxLogEntries)
+        }
+    }
+
+    func addTranscriptToHistory(
+        _ text: String,
+        enhancedText: String? = nil,
+        transcriptionError: String? = nil,
+        enhancementError: String? = nil
+    ) {
         guard historyLimit != .none else { return }
-        let entry = TranscriptHistoryEntry(timestamp: Date(), text: text, enhancedText: enhancedText)
+        let entry = TranscriptHistoryEntry(
+            timestamp: Date(),
+            text: text,
+            enhancedText: enhancedText,
+            transcriptionError: transcriptionError,
+            enhancementError: enhancementError
+        )
         transcriptHistory.insert(entry, at: 0)
         applyHistoryLimit()
+    }
+
+    func addTranscriptionFailureToHistory(reason: String, partialText: String = "") {
+        addTranscriptToHistory(
+            partialText,
+            transcriptionError: reason
+        )
     }
 
     private func applyHistoryLimit() {
@@ -189,25 +248,95 @@ final class AppState: ObservableObject {
     }
 
     private var transcriptSegments: [String] = []
+
+    private func migrateLegacyEnhancementPrompts() {
+        guard let data = UserDefaults.standard.data(forKey: Self.legacyEnhancementPromptsKey),
+              let legacyPrompts = try? JSONDecoder().decode([String: String].self, from: data),
+              !legacyPrompts.isEmpty else {
+            return
+        }
+
+        var migratedPrompts: [PromptConfig] = []
+        var promptIDByShortcutID: [UUID: UUID] = [:]
+        for (shortcutIDRaw, content) in legacyPrompts.sorted(by: { $0.key < $1.key }) {
+            guard let shortcutID = UUID(uuidString: shortcutIDRaw) else { continue }
+            let trimmed = content.trimmed
+            guard !trimmed.isEmpty else { continue }
+
+            let prompt = PromptConfig(id: UUID(), name: "Migrated Prompt", content: trimmed)
+            migratedPrompts.append(prompt)
+            promptIDByShortcutID[shortcutID] = prompt.id
+        }
+
+        prompts = migratedPrompts
+        if !promptIDByShortcutID.isEmpty {
+            for index in shortcuts.indices {
+                if let promptID = promptIDByShortcutID[shortcuts[index].id] {
+                    shortcuts[index].promptID = promptID
+                }
+            }
+        }
+
+        UserDefaults.standard.removeObject(forKey: Self.legacyEnhancementPromptsKey)
+    }
 }
 
 struct TranscriptHistoryEntry: Identifiable {
+    static let emptyTranscriptionMessage = "No speech was detected or no final transcript was returned."
+
     let id = UUID()
     let timestamp: Date
     let text: String
     let enhancedText: String?
+    let transcriptionError: String?
+    let enhancementError: String?
 
-    init(timestamp: Date, text: String, enhancedText: String? = nil) {
+    init(
+        timestamp: Date,
+        text: String,
+        enhancedText: String? = nil,
+        transcriptionError: String? = nil,
+        enhancementError: String? = nil
+    ) {
         self.timestamp = timestamp
         self.text = text
         self.enhancedText = enhancedText
+        self.transcriptionError = transcriptionError
+        self.enhancementError = enhancementError
     }
 
     var displayText: String {
-        let source = enhancedText ?? text
+        let source = (enhancedText ?? text).trimmed
+        if source.isEmpty {
+            if let transcriptionError {
+                return "Transcription failed: \(transcriptionError)"
+            }
+            if let enhancementError {
+                return "Enhancement failed: \(enhancementError)"
+            }
+            return ""
+        }
         let sentences = source.splitIntoSentences()
         if sentences.count <= 3 { return source }
         return sentences.prefix(3).joined() + "…"
+    }
+
+    var shouldShowTranscriptionWarningIcon: Bool {
+        guard let transcriptionError else { return false }
+        return !(text.trimmed.isEmpty && transcriptionError == Self.emptyTranscriptionMessage)
+    }
+}
+
+enum OverlayPosition: String, CaseIterable, Identifiable {
+    case top, bottom
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .top: "Top"
+        case .bottom: "Bottom"
+        }
     }
 }
 

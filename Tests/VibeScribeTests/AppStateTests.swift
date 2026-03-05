@@ -8,6 +8,7 @@ final class AppStateTests: XCTestCase {
     private let shortcutsDefaultsKey = "VibeScribe.Shortcuts"
     private let escToCancelDefaultsKey = "VibeScribe.EscToCancelRecording"
     private let playSoundEffectsDefaultsKey = "VibeScribe.PlaySoundEffects"
+    private let restoreClipboardAfterPasteDefaultsKey = "VibeScribe.RestoreClipboardAfterPaste"
 
     override func setUp() {
         super.setUp()
@@ -16,6 +17,7 @@ final class AppStateTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: shortcutsDefaultsKey)
         UserDefaults.standard.removeObject(forKey: escToCancelDefaultsKey)
         UserDefaults.standard.removeObject(forKey: playSoundEffectsDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: restoreClipboardAfterPasteDefaultsKey)
     }
 
     override func tearDown() {
@@ -24,6 +26,7 @@ final class AppStateTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: shortcutsDefaultsKey)
         UserDefaults.standard.removeObject(forKey: escToCancelDefaultsKey)
         UserDefaults.standard.removeObject(forKey: playSoundEffectsDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: restoreClipboardAfterPasteDefaultsKey)
         super.tearDown()
     }
 
@@ -56,6 +59,27 @@ final class AppStateTests: XCTestCase {
         state.handleTranscript("partial", isFinal: false)
         XCTAssertEqual(state.lastTranscript, "partial")
         XCTAssertEqual(state.finalTranscript, "")
+    }
+
+    func testFinalizeLatestInterimTranscriptPromotesLastTranscript() {
+        let state = AppState()
+        state.resetTranscript()
+
+        state.handleTranscript("this is interim", isFinal: false)
+        state.finalizeLatestInterimTranscript()
+
+        XCTAssertEqual(state.finalTranscript, "this is interim")
+    }
+
+    func testFinalizeLatestInterimTranscriptAvoidsDuplicateSegment() {
+        let state = AppState()
+        state.resetTranscript()
+
+        state.handleTranscript("segment", isFinal: true)
+        state.handleTranscript("segment", isFinal: false)
+        state.finalizeLatestInterimTranscript()
+
+        XCTAssertEqual(state.finalTranscript, "segment")
     }
 
     func testResetTranscriptClearsState() {
@@ -151,5 +175,20 @@ final class AppStateTests: XCTestCase {
 
         let restored = AppState()
         XCTAssertTrue(restored.playSoundEffects)
+    }
+
+    // MARK: - Clipboard Restore
+
+    func testRestoreClipboardAfterPasteDefaultsToFalse() {
+        let state = AppState()
+        XCTAssertFalse(state.restoreClipboardAfterPaste)
+    }
+
+    func testRestoreClipboardAfterPastePersists() {
+        let state = AppState()
+        state.restoreClipboardAfterPaste = true
+
+        let restored = AppState()
+        XCTAssertTrue(restored.restoreClipboardAfterPaste)
     }
 }

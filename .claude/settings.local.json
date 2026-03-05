@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(swift build:*)",
+      "Bash(swift test:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git status:*)",
+      "Bash(grep:*)",
+      "Bash(wc:*)",
+      "Bash(git log:*)",
+      "WebSearch",
+      "Bash(xargs:*)",
+      "Bash(git checkout:*)",
+      "Bash(git worktree:*)",
+      "Bash(git branch:*)",
+      "Bash(git rebase:*)"
+    ]
+  }
+}
