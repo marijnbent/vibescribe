@@ -15,6 +15,7 @@ final class PasteRuntimeTests: XCTestCase {
         "VibeScribe.EscToCancelRecording",
         "VibeScribe.PlaySoundEffects",
         "VibeScribe.MuteMediaDuringRecording",
+        "VibeScribe.RestoreClipboardAfterPaste",
         "VibeScribe.OverlayPosition"
     ]
 
@@ -32,7 +33,7 @@ final class PasteRuntimeTests: XCTestCase {
         super.tearDown()
     }
 
-    func testPasteRestoresClipboardAfterDelay() async {
+    func testPasteKeepsClipboardByDefaultAfterAutoPaste() async {
         let appState = AppState()
         appState.historyLimit = .ten
         appState.finalTranscript = "hello world"
@@ -60,9 +61,41 @@ final class PasteRuntimeTests: XCTestCase {
         XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
 
         scheduler.advance(by: 0.2)
+        XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
+        XCTAssertEqual(appState.appStatus, .idle)
+    }
+
+    func testPasteCanRestoreClipboardAfterAutoPasteWhenEnabled() async {
+        let appState = AppState()
+        appState.historyLimit = .ten
+        appState.finalTranscript = "hello world"
+
+        let clock = ManualClock()
+        let scheduler = ManualScheduler(clock: clock)
+        let pasteboard = FakePasteboardPort()
+        pasteboard.currentSnapshot = PasteboardSnapshotPayload(
+            items: [["public.utf8-plain-text": Data("old".utf8)]]
+        )
+        let sound = FakeSoundPort()
+
+        let runtime = PasteRuntime(
+            appState: appState,
+            pasteboard: pasteboard,
+            soundPort: sound,
+            scheduler: scheduler,
+            enhancer: { _, _, _, _ in "" },
+            restoreClipboardAfterPaste: { true }
+        )
+
+        await runtime.pasteFinalTranscript(shortcutID: nil, transcriptionError: nil)
+
+        XCTAssertEqual(pasteboard.writtenStrings.last, "hello world")
+        XCTAssertEqual(pasteboard.sendPasteCommandCallCount, 1)
+        XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
+
+        scheduler.advance(by: 0.2)
         XCTAssertEqual(pasteboard.restoredSnapshots.count, 1)
         XCTAssertEqual(pasteboard.restoredSnapshots[0], pasteboard.currentSnapshot)
-        XCTAssertEqual(appState.appStatus, .idle)
     }
 
     func testEnhancementMissingCredentialsFallsBackToOriginalAndRecordsError() async {
@@ -100,5 +133,67 @@ final class PasteRuntimeTests: XCTestCase {
         XCTAssertEqual(pasteboard.writtenStrings.last, "raw transcript")
         XCTAssertEqual(appState.transcriptHistory.first?.enhancementError, "OpenRouter API key is not set.")
         XCTAssertEqual(appState.appStatus, .idle)
+    }
+
+    func testPasteCommandFailureKeepsClipboardByDefault() async {
+        let appState = AppState()
+        appState.historyLimit = .ten
+        appState.finalTranscript = "hello world"
+
+        let clock = ManualClock()
+        let scheduler = ManualScheduler(clock: clock)
+        let pasteboard = FakePasteboardPort()
+        pasteboard.currentSnapshot = PasteboardSnapshotPayload(
+            items: [["public.utf8-plain-text": Data("old".utf8)]]
+        )
+        pasteboard.sendPasteCommandResult = false
+        let sound = FakeSoundPort()
+
+        let runtime = PasteRuntime(
+            appState: appState,
+            pasteboard: pasteboard,
+            soundPort: sound,
+            scheduler: scheduler,
+            enhancer: { _, _, _, _ in "" }
+        )
+
+        await runtime.pasteFinalTranscript(shortcutID: nil, transcriptionError: nil)
+
+        XCTAssertEqual(pasteboard.writtenStrings.last, "hello world")
+        XCTAssertEqual(pasteboard.sendPasteCommandCallCount, 1)
+        XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
+    }
+
+    func testPasteCommandFailureDoesNotRestoreClipboardEvenWhenEnabled() async {
+        let appState = AppState()
+        appState.historyLimit = .ten
+        appState.finalTranscript = "hello world"
+
+        let clock = ManualClock()
+        let scheduler = ManualScheduler(clock: clock)
+        let pasteboard = FakePasteboardPort()
+        pasteboard.currentSnapshot = PasteboardSnapshotPayload(
+            items: [["public.utf8-plain-text": Data("old".utf8)]]
+        )
+        pasteboard.sendPasteCommandResult = false
+        let sound = FakeSoundPort()
+
+        let runtime = PasteRuntime(
+            appState: appState,
+            pasteboard: pasteboard,
+            soundPort: sound,
+            scheduler: scheduler,
+            enhancer: { _, _, _, _ in "" },
+            restoreClipboardAfterPaste: { true }
+        )
+
+        await runtime.pasteFinalTranscript(shortcutID: nil, transcriptionError: nil)
+
+        XCTAssertEqual(pasteboard.writtenStrings.last, "hello world")
+        XCTAssertEqual(pasteboard.sendPasteCommandCallCount, 1)
+        XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
+
+        scheduler.advance(by: 0.2)
+        XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
     }
 }

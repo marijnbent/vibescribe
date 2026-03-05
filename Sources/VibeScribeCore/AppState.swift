@@ -17,6 +17,7 @@ final class AppState: ObservableObject {
     private static let escToCancelRecordingKey = "VibeScribe.EscToCancelRecording"
     private static let playSoundEffectsKey = "VibeScribe.PlaySoundEffects"
     private static let muteMediaDuringRecordingKey = "VibeScribe.MuteMediaDuringRecording"
+    private static let restoreClipboardAfterPasteKey = "VibeScribe.RestoreClipboardAfterPaste"
     private static let overlayPositionKey = "VibeScribe.OverlayPosition"
     private static let accessibilityPromptDelayNanoseconds: UInt64 = 500_000_000
     private static let maxLogEntries = 1_000
@@ -99,6 +100,12 @@ final class AppState: ObservableObject {
         }
     }
 
+    @Published var restoreClipboardAfterPaste: Bool {
+        didSet {
+            UserDefaults.standard.set(restoreClipboardAfterPaste, forKey: Self.restoreClipboardAfterPasteKey)
+        }
+    }
+
     @Published var overlayPosition: OverlayPosition {
         didSet {
             UserDefaults.standard.set(overlayPosition.rawValue, forKey: Self.overlayPositionKey)
@@ -123,6 +130,7 @@ final class AppState: ObservableObject {
         escToCancelRecording = (UserDefaults.standard.object(forKey: Self.escToCancelRecordingKey) as? Bool) ?? true
         playSoundEffects = (UserDefaults.standard.object(forKey: Self.playSoundEffectsKey) as? Bool) ?? false
         muteMediaDuringRecording = (UserDefaults.standard.object(forKey: Self.muteMediaDuringRecordingKey) as? Bool) ?? false
+        restoreClipboardAfterPaste = (UserDefaults.standard.object(forKey: Self.restoreClipboardAfterPasteKey) as? Bool) ?? false
         let savedPosition = UserDefaults.standard.string(forKey: Self.overlayPositionKey)
         overlayPosition = savedPosition.flatMap(OverlayPosition.init(rawValue:)) ?? .top
         let savedLanguage = UserDefaults.standard.string(forKey: Self.deepgramLanguageKey)

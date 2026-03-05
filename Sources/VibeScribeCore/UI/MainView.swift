@@ -108,6 +108,7 @@ struct MainView: View {
                 Toggle("Cancel recording with Escape", isOn: $appState.escToCancelRecording)
                 Toggle("Play sound effects", isOn: $appState.playSoundEffects)
                 Toggle("Mute during recording", isOn: $appState.muteMediaDuringRecording)
+                Toggle("Restore clipboard after auto-paste", isOn: $appState.restoreClipboardAfterPaste)
                 Picker("Widget position", selection: $appState.overlayPosition) {
                     ForEach(OverlayPosition.allCases) { position in
                         Text(position.displayName).tag(position)

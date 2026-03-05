@@ -10,6 +10,7 @@ final class PasteRuntime {
     private let soundPort: SoundPort
     private let scheduler: SchedulerPort
     private let enhancer: Enhancer
+    private let restoreClipboardAfterPaste: () -> Bool
     private let clipboardRestoreDelay: TimeInterval
 
     var onHideOverlay: (() -> Void)?
@@ -20,6 +21,7 @@ final class PasteRuntime {
         soundPort: SoundPort,
         scheduler: SchedulerPort,
         enhancer: @escaping Enhancer,
+        restoreClipboardAfterPaste: @escaping () -> Bool = { false },
         clipboardRestoreDelay: TimeInterval = 0.2
     ) {
         self.appState = appState
@@ -27,6 +29,7 @@ final class PasteRuntime {
         self.soundPort = soundPort
         self.scheduler = scheduler
         self.enhancer = enhancer
+        self.restoreClipboardAfterPaste = restoreClipboardAfterPaste
         self.clipboardRestoreDelay = clipboardRestoreDelay
     }
 
@@ -107,7 +110,8 @@ final class PasteRuntime {
         onHideOverlay?()
 
         let textToPaste = enhancedText ?? rawText
-        let snapshot = pasteboard.snapshot()
+        let shouldRestoreClipboard = restoreClipboardAfterPaste()
+        let snapshot = shouldRestoreClipboard ? pasteboard.snapshot() : nil
         pasteboard.writeString(textToPaste)
 
         appState.addTranscriptToHistory(
@@ -130,9 +134,9 @@ final class PasteRuntime {
             appState.addLog("Accessibility permission not granted. Enable it to allow paste automation.", level: .warning)
         }
 
-        guard pasteboard.sendPasteCommand() else {
+        let didAutoPaste = pasteboard.sendPasteCommand()
+        guard didAutoPaste else {
             appState.addLog("Failed to send paste command (Cmd+V).", level: .error)
-            pasteboard.restore(snapshot)
             if enhancementFailed { playErrorSound() } else { playSound("Pop") }
             return
         }
@@ -141,6 +145,7 @@ final class PasteRuntime {
 
         if enhancementFailed { playErrorSound() } else { playSound("Pop") }
 
+        guard shouldRestoreClipboard, let snapshot else { return }
         _ = scheduler.schedule(after: clipboardRestoreDelay) { [weak self] in
             self?.pasteboard.restore(snapshot)
         }

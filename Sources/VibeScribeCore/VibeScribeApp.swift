@@ -112,6 +112,9 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
                     apiKey: apiKey,
                     model: model
                 )
+            },
+            restoreClipboardAfterPaste: { [weak self] in
+                self?.appState.restoreClipboardAfterPaste ?? false
             }
         )
 
