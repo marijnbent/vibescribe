@@ -1,5 +1,7 @@
 # VibeScribe
 
+![Vibe Engineered](https://img.shields.io/badge/vibe_engineered-%E2%9C%A8-ff6ac1?style=flat-square&labelColor=0d0d1a)
+
 ![VibeScribe header](assets/readme-header.png)
 
 A blazing fast macOS dictation app with real-time transcription and AI-powered enhancement, powered by [Deepgram](https://deepgram.com) and [OpenRouter](https://openrouter.ai).
