@@ -110,5 +110,8 @@ Issues and PRs are welcome.
 ## License
 MIT — use, modify, and distribute freely (including commercially) as long as you keep the copyright notice. No warranty. See `LICENSE`.
 
+## Credits
+This project is a fork of [flatoy/vibescribe](https://github.com/flatoy/vibescribe).
+
 ## Notes
 The API key is stored in `UserDefaults` in plaintext for convenience. For a production distribution, consider using the Keychain instead.
