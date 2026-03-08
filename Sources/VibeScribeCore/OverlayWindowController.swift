@@ -16,17 +16,32 @@ final class OverlayWindowController {
         if panel == nil {
             panel = makePanel()
         }
-        appState.overlayPulseID = UUID()
         guard let panel else { return }
-        isShowing = true
-        animationID = UUID()
-
         guard let screen = NSScreen.main else {
+            appState.overlayPulseID = UUID()
+            isShowing = true
+            animationID = UUID()
             panel.orderFrontRegardless()
             return
         }
 
         let target = targetFrame(screen: screen)
+
+        if isShowing {
+            panel.alphaValue = 1
+            panel.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.12
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                panel.animator().setFrame(target, display: true)
+            }
+            return
+        }
+
+        appState.overlayPulseID = UUID()
+        isShowing = true
+        animationID = UUID()
+
         let offscreen = offscreenFrame(screen: screen, width: target.width, height: target.height)
 
         panel.alphaValue = 0

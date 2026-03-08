@@ -249,7 +249,7 @@ final class RecordingRuntime {
         if pendingEnhancementPrompt != nil {
             onOverlayUpdate?(true, "Enhancing", overlayAppIcon)
         } else {
-            onOverlayUpdate?(false, "Listening", nil)
+            onOverlayUpdate?(true, "Listening", nil)
         }
 
         didFinalizeCurrentSession = false

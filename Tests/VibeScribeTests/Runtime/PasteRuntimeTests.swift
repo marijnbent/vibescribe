@@ -98,6 +98,40 @@ final class PasteRuntimeTests: XCTestCase {
         XCTAssertEqual(pasteboard.restoredSnapshots[0], pasteboard.currentSnapshot)
     }
 
+    func testOverlayHidesAfterPasteCommandAttempt() async {
+        let appState = AppState()
+        appState.historyLimit = .ten
+        appState.finalTranscript = "hello world"
+
+        let clock = ManualClock()
+        let scheduler = ManualScheduler(clock: clock)
+        let pasteboard = FakePasteboardPort()
+        let sound = FakeSoundPort()
+        var events: [String] = []
+
+        pasteboard.onWriteString = { _ in
+            events.append("write")
+        }
+        pasteboard.onSendPasteCommand = {
+            events.append("paste")
+        }
+
+        let runtime = PasteRuntime(
+            appState: appState,
+            pasteboard: pasteboard,
+            soundPort: sound,
+            scheduler: scheduler,
+            enhancer: { _, _, _, _ in "" }
+        )
+        runtime.onHideOverlay = {
+            events.append("hide")
+        }
+
+        await runtime.pasteFinalTranscript(enhancementPrompt: nil, transcriptionError: nil)
+
+        XCTAssertEqual(events, ["write", "paste", "hide"])
+    }
+
     func testEnhancementMissingCredentialsFallsBackToOriginalAndRecordsError() async {
         let appState = AppState()
         appState.historyLimit = .ten

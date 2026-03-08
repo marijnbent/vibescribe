@@ -162,6 +162,8 @@ final class FakePasteboardPort: PasteboardPort {
     var restoredSnapshots: [PasteboardSnapshotPayload] = []
     var sendPasteCommandResult = true
     var sendPasteCommandCallCount = 0
+    var onWriteString: ((String) -> Void)?
+    var onSendPasteCommand: (() -> Void)?
 
     func snapshot() -> PasteboardSnapshotPayload {
         currentSnapshot
@@ -169,6 +171,7 @@ final class FakePasteboardPort: PasteboardPort {
 
     func writeString(_ value: String) {
         writtenStrings.append(value)
+        onWriteString?(value)
     }
 
     func restore(_ snapshot: PasteboardSnapshotPayload) {
@@ -177,6 +180,7 @@ final class FakePasteboardPort: PasteboardPort {
 
     func sendPasteCommand() -> Bool {
         sendPasteCommandCallCount += 1
+        onSendPasteCommand?()
         return sendPasteCommandResult
     }
 }

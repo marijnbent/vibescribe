@@ -120,6 +120,26 @@ final class RecordingRuntimeTests: XCTestCase {
         XCTAssertEqual(overlayUpdates.last?.2, true)
     }
 
+    func testStopKeepsOverlayVisibleWithoutEnhancementUntilPasteFlowTakesOver() async {
+        let harness = makeHarness()
+        var overlayUpdates: [(Bool, String, Bool)] = []
+        harness.runtime.onOverlayUpdate = { visible, label, icon in
+            overlayUpdates.append((visible, label, icon != nil))
+        }
+
+        let ownerID = UUID()
+        harness.runtime.handle(action: .start(ownerShortcutID: ownerID, ownerMode: .hold, latched: false))
+        harness.runtime.handle(action: .stop)
+        harness.deepgram.completeClose()
+        await Task.yield()
+
+        XCTAssertEqual(overlayUpdates.count, 2)
+        XCTAssertEqual(overlayUpdates[0].0, true)
+        XCTAssertEqual(overlayUpdates[0].1, "Listening")
+        XCTAssertEqual(overlayUpdates[1].0, true)
+        XCTAssertEqual(overlayUpdates[1].1, "Listening")
+    }
+
     private func makeHarness(
         activeApplicationProvider: @escaping () -> ActiveApplicationContext? = { nil },
         resolvedEnhancementPromptProvider: @escaping (UUID?, String?) -> EnhancementPromptContext? = { _, _ in nil }

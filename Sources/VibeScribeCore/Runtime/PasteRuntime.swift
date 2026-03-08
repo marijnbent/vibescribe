@@ -52,6 +52,10 @@ final class PasteRuntime {
             return
         }
 
+        defer {
+            onHideOverlay?()
+        }
+
         var enhancedText: String?
         var enhancementFailed = false
         var enhancementError: String?
@@ -105,8 +109,6 @@ final class PasteRuntime {
                 }
             }
         }
-
-        onHideOverlay?()
 
         let textToPaste = enhancedText ?? rawText
         let shouldRestoreClipboard = restoreClipboardAfterPaste()
