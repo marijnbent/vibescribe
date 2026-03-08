@@ -33,7 +33,7 @@ final class PasteRuntime {
         self.clipboardRestoreDelay = clipboardRestoreDelay
     }
 
-    func pasteFinalTranscript(shortcutID: UUID?, transcriptionError: String?) async {
+    func pasteFinalTranscript(enhancementPrompt: String?, transcriptionError: String?) async {
         let finalText = appState.finalTranscript.trimmed
         let fallbackText = appState.lastTranscript.trimmed
         let rawText = finalText.isEmpty ? fallbackText : finalText
@@ -56,8 +56,7 @@ final class PasteRuntime {
         var enhancementFailed = false
         var enhancementError: String?
 
-        if let shortcutID,
-           let prompt = appState.promptContent(forShortcutID: shortcutID) {
+        if let prompt = enhancementPrompt {
             if !appState.hasOpenRouterCredentials {
                 let missing = appState.openRouterApiKey.trimmed.isEmpty ? "API key" : "model"
                 let reason = "OpenRouter \(missing) is not set."

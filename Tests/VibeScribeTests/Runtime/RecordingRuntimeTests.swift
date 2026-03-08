@@ -75,7 +75,7 @@ final class RecordingRuntimeTests: XCTestCase {
             clock: clock,
             languageProvider: { .automatic },
             apiKeyProvider: { "dg_key" },
-            hasEnhancementForShortcut: { _ in false },
+            resolvedEnhancementPromptProvider: { _ in nil },
             playSoundEffectsEnabledProvider: { false },
             muteDuringRecordingProvider: { false },
             soundPort: sound

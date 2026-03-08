@@ -86,10 +86,13 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             apiKeyProvider: { [weak self] in
                 self?.appState.apiKey ?? ""
             },
-            hasEnhancementForShortcut: { [weak self] shortcutID in
-                guard let self else { return false }
-                guard let shortcutID else { return false }
-                return self.appState.promptContent(forShortcutID: shortcutID) != nil
+            resolvedEnhancementPromptProvider: { [weak self] shortcutID in
+                guard let self else { return nil }
+                guard let shortcutID else { return nil }
+                return self.appState.promptContent(
+                    forShortcutID: shortcutID,
+                    activeAppBundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                )
             },
             playSoundEffectsEnabledProvider: { [weak self] in
                 self?.appState.playSoundEffects ?? false
@@ -171,7 +174,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             guard let self else { return }
             Task { @MainActor in
                 await self.pasteRuntime.pasteFinalTranscript(
-                    shortcutID: finalization.shortcutID,
+                    enhancementPrompt: finalization.enhancementPrompt,
                     transcriptionError: finalization.transcriptionError
                 )
             }

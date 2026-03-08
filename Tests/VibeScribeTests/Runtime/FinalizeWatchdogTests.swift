@@ -19,7 +19,7 @@ final class FinalizeWatchdogTests: XCTestCase {
             clock: clock,
             languageProvider: { .automatic },
             apiKeyProvider: { "dg_key" },
-            hasEnhancementForShortcut: { _ in true },
+            resolvedEnhancementPromptProvider: { _ in "clean this" },
             playSoundEffectsEnabledProvider: { false },
             muteDuringRecordingProvider: { false },
             soundPort: sound

@@ -123,6 +123,26 @@ final class EnhancementTests: XCTestCase {
         XCTAssertNil(state.shortcuts[0].promptID)
     }
 
+    func testDeletePromptClearsShortcutOverrideReferences() {
+        let state = AppState()
+        let defaultPrompt = PromptConfig(id: UUID(), name: "Default", content: "default")
+        let overridePrompt = PromptConfig(id: UUID(), name: "WhatsApp", content: "whatsapp")
+        state.prompts = [defaultPrompt, overridePrompt]
+        state.shortcuts[0].promptID = defaultPrompt.id
+        state.shortcuts[0].appPromptOverrides = [
+            AppPromptOverride(
+                appBundleIdentifier: "net.whatsapp.WhatsApp",
+                appDisplayName: "WhatsApp",
+                promptID: overridePrompt.id
+            )
+        ]
+
+        state.deletePrompt(id: overridePrompt.id)
+
+        XCTAssertTrue(state.shortcuts[0].appPromptOverrides.isEmpty)
+        XCTAssertEqual(state.shortcuts[0].promptID, defaultPrompt.id)
+    }
+
     func testPromptContentForShortcutID() {
         let state = AppState()
         let prompt = PromptConfig(id: UUID(), name: "Test", content: "do the thing")
@@ -141,6 +161,50 @@ final class EnhancementTests: XCTestCase {
         let state = AppState()
         state.shortcuts[0].promptID = UUID() // points to nonexistent prompt
         XCTAssertNil(state.promptContent(forShortcutID: state.shortcuts[0].id))
+    }
+
+    func testPromptContentForShortcutIDUsesAppOverrideBeforeDefault() {
+        let state = AppState()
+        let defaultPrompt = PromptConfig(id: UUID(), name: "Default", content: "default")
+        let overridePrompt = PromptConfig(id: UUID(), name: "WhatsApp", content: "override")
+        state.prompts = [defaultPrompt, overridePrompt]
+        state.shortcuts[0].promptID = defaultPrompt.id
+        state.shortcuts[0].appPromptOverrides = [
+            AppPromptOverride(
+                appBundleIdentifier: "net.whatsapp.WhatsApp",
+                appDisplayName: "WhatsApp",
+                promptID: overridePrompt.id
+            )
+        ]
+
+        let content = state.promptContent(
+            forShortcutID: state.shortcuts[0].id,
+            activeAppBundleIdentifier: "NET.WHATSAPP.WHATSAPP"
+        )
+
+        XCTAssertEqual(content, "override")
+    }
+
+    func testPromptContentForShortcutIDFallsBackToDefaultWhenNoAppOverrideMatches() {
+        let state = AppState()
+        let defaultPrompt = PromptConfig(id: UUID(), name: "Default", content: "default")
+        let overridePrompt = PromptConfig(id: UUID(), name: "WhatsApp", content: "override")
+        state.prompts = [defaultPrompt, overridePrompt]
+        state.shortcuts[0].promptID = defaultPrompt.id
+        state.shortcuts[0].appPromptOverrides = [
+            AppPromptOverride(
+                appBundleIdentifier: "net.whatsapp.WhatsApp",
+                appDisplayName: "WhatsApp",
+                promptID: overridePrompt.id
+            )
+        ]
+
+        let content = state.promptContent(
+            forShortcutID: state.shortcuts[0].id,
+            activeAppBundleIdentifier: "com.apple.TextEdit"
+        )
+
+        XCTAssertEqual(content, "default")
     }
 
     // MARK: - Migration from old enhancementPrompts

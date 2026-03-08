@@ -236,15 +236,76 @@ final class AppState: ObservableObject {
         for i in shortcuts.indices where shortcuts[i].promptID == id {
             shortcuts[i].promptID = nil
         }
+        for i in shortcuts.indices {
+            shortcuts[i].appPromptOverrides.removeAll { $0.promptID == id }
+        }
     }
 
-    func promptContent(forShortcutID shortcutID: UUID) -> String? {
-        guard let shortcut = shortcuts.first(where: { $0.id == shortcutID }),
-              let promptID = shortcut.promptID,
-              let prompt = prompts.first(where: { $0.id == promptID }) else {
+    func promptContent(forShortcutID shortcutID: UUID, activeAppBundleIdentifier: String? = nil) -> String? {
+        resolvedPrompt(forShortcutID: shortcutID, activeAppBundleIdentifier: activeAppBundleIdentifier)?.content
+    }
+
+    func resolvedPrompt(forShortcutID shortcutID: UUID, activeAppBundleIdentifier: String? = nil) -> PromptConfig? {
+        guard let shortcut = shortcuts.first(where: { $0.id == shortcutID }) else {
             return nil
         }
-        return prompt.content
+
+        if let normalizedBundleIdentifier = AppPromptOverride.normalizeBundleIdentifier(activeAppBundleIdentifier),
+           let overridePromptID = shortcut.appPromptOverrides.first(where: {
+               $0.normalizedAppBundleIdentifier == normalizedBundleIdentifier
+           })?.promptID,
+           let prompt = prompts.first(where: { $0.id == overridePromptID }) {
+            return prompt
+        }
+
+        if let promptID = shortcut.promptID,
+           let prompt = prompts.first(where: { $0.id == promptID }) {
+            return prompt
+        }
+
+        return nil
+    }
+
+    func upsertAppPromptOverride(
+        shortcutID: UUID,
+        appBundleIdentifier: String,
+        appDisplayName: String,
+        promptID: UUID? = nil
+    ) {
+        guard let normalizedBundleIdentifier = AppPromptOverride.normalizeBundleIdentifier(appBundleIdentifier),
+              let shortcutIndex = shortcuts.firstIndex(where: { $0.id == shortcutID }) else {
+            return
+        }
+
+        let resolvedPromptID = promptID ?? shortcuts[shortcutIndex].promptID ?? prompts.first?.id
+        guard let resolvedPromptID else { return }
+
+        let cleanedDisplayName = appDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = cleanedDisplayName.isEmpty ? appBundleIdentifier : cleanedDisplayName
+
+        if let overrideIndex = shortcuts[shortcutIndex].appPromptOverrides.firstIndex(where: {
+            $0.normalizedAppBundleIdentifier == normalizedBundleIdentifier
+        }) {
+            shortcuts[shortcutIndex].appPromptOverrides[overrideIndex].appBundleIdentifier = normalizedBundleIdentifier
+            shortcuts[shortcutIndex].appPromptOverrides[overrideIndex].appDisplayName = displayName
+            shortcuts[shortcutIndex].appPromptOverrides[overrideIndex].promptID = resolvedPromptID
+        } else {
+            shortcuts[shortcutIndex].appPromptOverrides.append(
+                AppPromptOverride(
+                    appBundleIdentifier: normalizedBundleIdentifier,
+                    appDisplayName: displayName,
+                    promptID: resolvedPromptID
+                )
+            )
+        }
+
+        shortcuts[shortcutIndex].appPromptOverrides.sort {
+            let nameOrder = $0.appDisplayName.localizedCaseInsensitiveCompare($1.appDisplayName)
+            if nameOrder != .orderedSame {
+                return nameOrder == .orderedAscending
+            }
+            return $0.appBundleIdentifier.localizedCaseInsensitiveCompare($1.appBundleIdentifier) == .orderedAscending
+        }
     }
 
     private var transcriptSegments: [String] = []

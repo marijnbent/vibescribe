@@ -3,7 +3,7 @@ import AppKit
 import AVFoundation
 
 struct RecordingFinalization {
-    let shortcutID: UUID?
+    let enhancementPrompt: String?
     let transcriptionError: String?
 }
 
@@ -16,7 +16,7 @@ final class RecordingRuntime {
 
     private let languageProvider: () -> DeepgramLanguage
     private let apiKeyProvider: () -> String
-    private let hasEnhancementForShortcut: (UUID?) -> Bool
+    private let resolvedEnhancementPromptProvider: (UUID?) -> String?
     private let playSoundEffectsEnabledProvider: () -> Bool
     private let muteDuringRecordingProvider: () -> Bool
     private let soundPort: SoundPort
@@ -40,6 +40,7 @@ final class RecordingRuntime {
 
     private var currentRecordingFormat: AudioStreamFormat?
     private var pendingTranscriptionError: String?
+    private var pendingEnhancementPrompt: String?
     private var deepgramReconnectAttempt = 0
     private var hasPlayedTranscriptionFailureSound = false
     private var didFinalizeCurrentSession = false
@@ -65,7 +66,7 @@ final class RecordingRuntime {
         clock: ClockPort,
         languageProvider: @escaping () -> DeepgramLanguage,
         apiKeyProvider: @escaping () -> String,
-        hasEnhancementForShortcut: @escaping (UUID?) -> Bool,
+        resolvedEnhancementPromptProvider: @escaping (UUID?) -> String?,
         playSoundEffectsEnabledProvider: @escaping () -> Bool,
         muteDuringRecordingProvider: @escaping () -> Bool,
         soundPort: SoundPort,
@@ -80,7 +81,7 @@ final class RecordingRuntime {
         self.clock = clock
         self.languageProvider = languageProvider
         self.apiKeyProvider = apiKeyProvider
-        self.hasEnhancementForShortcut = hasEnhancementForShortcut
+        self.resolvedEnhancementPromptProvider = resolvedEnhancementPromptProvider
         self.playSoundEffectsEnabledProvider = playSoundEffectsEnabledProvider
         self.muteDuringRecordingProvider = muteDuringRecordingProvider
         self.soundPort = soundPort
@@ -162,6 +163,7 @@ final class RecordingRuntime {
             cancelFinalizeWatchdog()
 
             pendingTranscriptionError = nil
+            pendingEnhancementPrompt = nil
             hasPlayedTranscriptionFailureSound = false
             deepgramReconnectAttempt = 0
             didFinalizeCurrentSession = false
@@ -220,7 +222,8 @@ final class RecordingRuntime {
         onRestoreMute?()
 
         let shortcutID = ownership?.ownerShortcutID
-        if hasEnhancementForShortcut(shortcutID) {
+        pendingEnhancementPrompt = resolvedEnhancementPromptProvider(shortcutID)
+        if pendingEnhancementPrompt != nil {
             onOverlayUpdate?(true, "Enhancing")
         } else {
             onOverlayUpdate?(false, "Listening")
@@ -244,7 +247,7 @@ final class RecordingRuntime {
         cancelFinalizeWatchdog()
 
         let finalization = RecordingFinalization(
-            shortcutID: ownership?.ownerShortcutID,
+            enhancementPrompt: pendingEnhancementPrompt,
             transcriptionError: pendingTranscriptionError
         )
 
@@ -398,6 +401,7 @@ final class RecordingRuntime {
         phase = .idle
         ownership = nil
         currentRecordingFormat = nil
+        pendingEnhancementPrompt = nil
         deepgramReconnectAttempt = 0
         didFinalizeCurrentSession = false
         onRestoreMute?()

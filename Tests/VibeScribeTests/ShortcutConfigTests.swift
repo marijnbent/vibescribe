@@ -81,6 +81,7 @@ final class ShortcutConfigTests: XCTestCase {
         XCTAssertEqual(config.key, .rightOption)
         XCTAssertEqual(config.mode, .both)
         XCTAssertNil(config.promptID)
+        XCTAssertTrue(config.appPromptOverrides.isEmpty)
     }
 
     func testMakeDefaultGeneratesUniqueIDs() {
@@ -121,6 +122,7 @@ final class ShortcutConfigTests: XCTestCase {
         XCTAssertEqual(decoded.key, .fn)
         XCTAssertEqual(decoded.mode, .hold)
         XCTAssertNil(decoded.promptID)
+        XCTAssertTrue(decoded.appPromptOverrides.isEmpty)
     }
 
     func testShortcutConfigArrayCodableRoundTrip() throws {
@@ -151,6 +153,39 @@ final class ShortcutConfigTests: XCTestCase {
 
         let c = ShortcutConfig(id: id, key: .fn, mode: .click)
         XCTAssertNotEqual(a, c)
+    }
+
+    func testShortcutConfigAppPromptOverridesRoundTrip() throws {
+        let promptID = UUID()
+        let override = AppPromptOverride(
+            appBundleIdentifier: "net.whatsapp.WhatsApp",
+            appDisplayName: "WhatsApp",
+            promptID: promptID
+        )
+        let config = ShortcutConfig(
+            id: UUID(),
+            key: .fn,
+            mode: .hold,
+            promptID: nil,
+            appPromptOverrides: [override]
+        )
+
+        let data = try JSONEncoder().encode(config)
+        let decoded = try JSONDecoder().decode(ShortcutConfig.self, from: data)
+
+        XCTAssertEqual(decoded.appPromptOverrides.count, 1)
+        XCTAssertEqual(decoded.appPromptOverrides[0].appDisplayName, "WhatsApp")
+        XCTAssertEqual(decoded.appPromptOverrides[0].promptID, promptID)
+    }
+
+    func testAppPromptOverrideNormalizesBundleIdentifier() {
+        let override = AppPromptOverride(
+            appBundleIdentifier: "  NET.WhatsApp.WhatsApp ",
+            appDisplayName: "WhatsApp",
+            promptID: UUID()
+        )
+
+        XCTAssertEqual(override.normalizedAppBundleIdentifier, "net.whatsapp.whatsapp")
     }
 
     // MARK: - PromptConfig

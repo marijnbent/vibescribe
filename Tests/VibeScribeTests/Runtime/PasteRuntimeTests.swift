@@ -54,7 +54,7 @@ final class PasteRuntimeTests: XCTestCase {
             enhancer: { _, _, _, _ in "" }
         )
 
-        await runtime.pasteFinalTranscript(shortcutID: nil, transcriptionError: nil)
+        await runtime.pasteFinalTranscript(enhancementPrompt: nil, transcriptionError: nil)
 
         XCTAssertEqual(pasteboard.writtenStrings.last, "hello world")
         XCTAssertEqual(pasteboard.sendPasteCommandCallCount, 1)
@@ -87,7 +87,7 @@ final class PasteRuntimeTests: XCTestCase {
             restoreClipboardAfterPaste: { true }
         )
 
-        await runtime.pasteFinalTranscript(shortcutID: nil, transcriptionError: nil)
+        await runtime.pasteFinalTranscript(enhancementPrompt: nil, transcriptionError: nil)
 
         XCTAssertEqual(pasteboard.writtenStrings.last, "hello world")
         XCTAssertEqual(pasteboard.sendPasteCommandCallCount, 1)
@@ -128,7 +128,7 @@ final class PasteRuntimeTests: XCTestCase {
             }
         )
 
-        await runtime.pasteFinalTranscript(shortcutID: appState.shortcuts[0].id, transcriptionError: nil)
+        await runtime.pasteFinalTranscript(enhancementPrompt: "clean this", transcriptionError: nil)
 
         XCTAssertEqual(pasteboard.writtenStrings.last, "raw transcript")
         XCTAssertEqual(appState.transcriptHistory.first?.enhancementError, "OpenRouter API key is not set.")
@@ -157,7 +157,7 @@ final class PasteRuntimeTests: XCTestCase {
             enhancer: { _, _, _, _ in "" }
         )
 
-        await runtime.pasteFinalTranscript(shortcutID: nil, transcriptionError: nil)
+        await runtime.pasteFinalTranscript(enhancementPrompt: nil, transcriptionError: nil)
 
         XCTAssertEqual(pasteboard.writtenStrings.last, "hello world")
         XCTAssertEqual(pasteboard.sendPasteCommandCallCount, 1)
@@ -187,7 +187,7 @@ final class PasteRuntimeTests: XCTestCase {
             restoreClipboardAfterPaste: { true }
         )
 
-        await runtime.pasteFinalTranscript(shortcutID: nil, transcriptionError: nil)
+        await runtime.pasteFinalTranscript(enhancementPrompt: nil, transcriptionError: nil)
 
         XCTAssertEqual(pasteboard.writtenStrings.last, "hello world")
         XCTAssertEqual(pasteboard.sendPasteCommandCallCount, 1)

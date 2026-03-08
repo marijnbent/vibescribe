@@ -84,9 +84,79 @@ struct ShortcutConfig: Codable, Identifiable, Equatable {
     var key: ShortcutKey
     var mode: ShortcutMode
     var promptID: UUID?
+    var appPromptOverrides: [AppPromptOverride]
+
+    init(
+        id: UUID,
+        key: ShortcutKey,
+        mode: ShortcutMode,
+        promptID: UUID? = nil,
+        appPromptOverrides: [AppPromptOverride] = []
+    ) {
+        self.id = id
+        self.key = key
+        self.mode = mode
+        self.promptID = promptID
+        self.appPromptOverrides = appPromptOverrides
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case key
+        case mode
+        case promptID
+        case appPromptOverrides
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        key = try container.decode(ShortcutKey.self, forKey: .key)
+        mode = try container.decode(ShortcutMode.self, forKey: .mode)
+        promptID = try container.decodeIfPresent(UUID.self, forKey: .promptID)
+        appPromptOverrides = try container.decodeIfPresent([AppPromptOverride].self, forKey: .appPromptOverrides) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(key, forKey: .key)
+        try container.encode(mode, forKey: .mode)
+        try container.encodeIfPresent(promptID, forKey: .promptID)
+        try container.encode(appPromptOverrides, forKey: .appPromptOverrides)
+    }
 
     static func makeDefault() -> ShortcutConfig {
         ShortcutConfig(id: UUID(), key: .rightOption, mode: .both)
+    }
+}
+
+struct AppPromptOverride: Codable, Identifiable, Equatable {
+    var id: UUID
+    var appBundleIdentifier: String
+    var appDisplayName: String
+    var promptID: UUID
+
+    init(
+        id: UUID = UUID(),
+        appBundleIdentifier: String,
+        appDisplayName: String,
+        promptID: UUID
+    ) {
+        self.id = id
+        self.appBundleIdentifier = appBundleIdentifier
+        self.appDisplayName = appDisplayName
+        self.promptID = promptID
+    }
+
+    var normalizedAppBundleIdentifier: String? {
+        Self.normalizeBundleIdentifier(appBundleIdentifier)
+    }
+
+    static func normalizeBundleIdentifier(_ bundleIdentifier: String?) -> String? {
+        let trimmed = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return nil }
+        return trimmed.lowercased()
     }
 }
 
