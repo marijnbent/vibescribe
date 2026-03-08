@@ -89,7 +89,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             resolvedEnhancementPromptProvider: { [weak self] shortcutID in
                 guard let self else { return nil }
                 guard let shortcutID else { return nil }
-                return self.appState.promptContent(
+                return self.appState.resolvedEnhancementPrompt(
                     forShortcutID: shortcutID,
                     activeAppBundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                 )

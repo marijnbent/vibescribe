@@ -6,6 +6,11 @@ import SwiftUI
 
 @MainActor
 final class AppState: ObservableObject {
+    struct ResolvedPromptSelection {
+        let prompt: PromptConfig
+        let isForActiveApp: Bool
+    }
+
     private static let apiKeyKey = "VibeScribe.ApiKey"
     private static let deepgramLanguageKey = "VibeScribe.DeepgramLanguage"
     private static let historyLimitKey = "VibeScribe.HistoryLimit"
@@ -197,7 +202,9 @@ final class AppState: ObservableObject {
         _ text: String,
         enhancedText: String? = nil,
         transcriptionError: String? = nil,
-        enhancementError: String? = nil
+        enhancementError: String? = nil,
+        promptName: String? = nil,
+        usedActiveAppPrompt: Bool = false
     ) {
         guard historyLimit != .none else { return }
         let entry = TranscriptHistoryEntry(
@@ -205,7 +212,9 @@ final class AppState: ObservableObject {
             text: text,
             enhancedText: enhancedText,
             transcriptionError: transcriptionError,
-            enhancementError: enhancementError
+            enhancementError: enhancementError,
+            promptName: promptName,
+            usedActiveAppPrompt: usedActiveAppPrompt
         )
         transcriptHistory.insert(entry, at: 0)
         applyHistoryLimit()
@@ -242,10 +251,35 @@ final class AppState: ObservableObject {
     }
 
     func promptContent(forShortcutID shortcutID: UUID, activeAppBundleIdentifier: String? = nil) -> String? {
-        resolvedPrompt(forShortcutID: shortcutID, activeAppBundleIdentifier: activeAppBundleIdentifier)?.content
+        resolvedPromptSelection(forShortcutID: shortcutID, activeAppBundleIdentifier: activeAppBundleIdentifier)?.prompt.content
     }
 
     func resolvedPrompt(forShortcutID shortcutID: UUID, activeAppBundleIdentifier: String? = nil) -> PromptConfig? {
+        resolvedPromptSelection(forShortcutID: shortcutID, activeAppBundleIdentifier: activeAppBundleIdentifier)?.prompt
+    }
+
+    func resolvedEnhancementPrompt(
+        forShortcutID shortcutID: UUID,
+        activeAppBundleIdentifier: String? = nil
+    ) -> EnhancementPromptContext? {
+        guard let selection = resolvedPromptSelection(
+            forShortcutID: shortcutID,
+            activeAppBundleIdentifier: activeAppBundleIdentifier
+        ) else {
+            return nil
+        }
+
+        return EnhancementPromptContext(
+            name: selection.prompt.displayName,
+            content: selection.prompt.content,
+            isForActiveApp: selection.isForActiveApp
+        )
+    }
+
+    func resolvedPromptSelection(
+        forShortcutID shortcutID: UUID,
+        activeAppBundleIdentifier: String? = nil
+    ) -> ResolvedPromptSelection? {
         guard let shortcut = shortcuts.first(where: { $0.id == shortcutID }) else {
             return nil
         }
@@ -255,12 +289,12 @@ final class AppState: ObservableObject {
                $0.normalizedAppBundleIdentifier == normalizedBundleIdentifier
            })?.promptID,
            let prompt = prompts.first(where: { $0.id == overridePromptID }) {
-            return prompt
+            return ResolvedPromptSelection(prompt: prompt, isForActiveApp: true)
         }
 
         if let promptID = shortcut.promptID,
            let prompt = prompts.first(where: { $0.id == promptID }) {
-            return prompt
+            return ResolvedPromptSelection(prompt: prompt, isForActiveApp: false)
         }
 
         return nil
@@ -351,19 +385,25 @@ struct TranscriptHistoryEntry: Identifiable {
     let enhancedText: String?
     let transcriptionError: String?
     let enhancementError: String?
+    let promptName: String?
+    let usedActiveAppPrompt: Bool
 
     init(
         timestamp: Date,
         text: String,
         enhancedText: String? = nil,
         transcriptionError: String? = nil,
-        enhancementError: String? = nil
+        enhancementError: String? = nil,
+        promptName: String? = nil,
+        usedActiveAppPrompt: Bool = false
     ) {
         self.timestamp = timestamp
         self.text = text
         self.enhancedText = enhancedText
         self.transcriptionError = transcriptionError
         self.enhancementError = enhancementError
+        self.promptName = promptName
+        self.usedActiveAppPrompt = usedActiveAppPrompt
     }
 
     var displayText: String {
@@ -385,6 +425,10 @@ struct TranscriptHistoryEntry: Identifiable {
     var shouldShowTranscriptionWarningIcon: Bool {
         guard let transcriptionError else { return false }
         return !(text.trimmed.isEmpty && transcriptionError == Self.emptyTranscriptionMessage)
+    }
+
+    var promptSourceLabel: String {
+        usedActiveAppPrompt ? "Active app" : "Default"
     }
 }
 

@@ -183,3 +183,10 @@ struct PromptConfig: Codable, Identifiable, Equatable {
         )
     }
 }
+
+extension PromptConfig {
+    var displayName: String {
+        let trimmed = name.trimmed
+        return trimmed.isEmpty ? "Untitled Prompt" : trimmed
+    }
+}

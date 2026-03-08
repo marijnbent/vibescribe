@@ -163,6 +163,21 @@ struct MainView: View {
                                 )
                             }
 
+                            if let promptName = entry.promptName {
+                                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                    Text("Prompt")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .textCase(.uppercase)
+                                    Text(promptName)
+                                        .font(.caption)
+                                    Spacer()
+                                    Text(entry.promptSourceLabel)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
                             let original = entry.text.trimmed
                             let enhanced = entry.enhancedText?.trimmed ?? ""
                             if !original.isEmpty, !enhanced.isEmpty {

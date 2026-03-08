@@ -12,11 +12,6 @@ private struct OverridePickerRequest: Identifiable {
 }
 
 private extension PromptConfig {
-    var displayName: String {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Untitled Prompt" : trimmed
-    }
-
     var previewText: String {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "No prompt content yet." }
@@ -76,79 +71,6 @@ private struct PromptEditorSheet: View {
     }
 }
 
-private struct CardContainer<Content: View, Actions: View>: View {
-    let title: String
-    let subtitle: String
-    @ViewBuilder var actions: Actions
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(title)
-                        .font(.title3.weight(.semibold))
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-                actions
-            }
-
-            content
-        }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.secondary.opacity(0.10))
-        )
-    }
-}
-
-private struct PromptLibraryRow: View {
-    let prompt: PromptConfig
-    let usageSummary: String
-    let onEdit: () -> Void
-    let onDelete: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(prompt.displayName)
-                    .font(.headline)
-
-                Text(prompt.previewText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
-
-                Text(usageSummary)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-
-            Spacer(minLength: 12)
-
-            HStack(spacing: 8) {
-                Button("Edit", action: onEdit)
-                Button("Delete", role: .destructive, action: onDelete)
-            }
-            .buttonStyle(.bordered)
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor))
-        )
-    }
-}
-
 private struct BundleIconView: View {
     let bundleIdentifier: String?
     let bundleURL: URL?
@@ -201,51 +123,6 @@ private struct BundleIconView: View {
     }
 }
 
-private struct AppOverrideRow: View {
-    @Binding var appOverride: AppPromptOverride
-    let prompts: [PromptConfig]
-    let onDelete: () -> Void
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            BundleIconView(
-                bundleIdentifier: appOverride.appBundleIdentifier,
-                bundleURL: nil,
-                size: 30
-            )
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(appOverride.appDisplayName)
-                    .font(.headline)
-                Text(appOverride.appBundleIdentifier)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 12)
-
-            Picker("Prompt", selection: $appOverride.promptID) {
-                ForEach(prompts) { prompt in
-                    Text(prompt.displayName).tag(prompt.id)
-                }
-            }
-            .pickerStyle(.menu)
-            .frame(width: 220)
-
-            Button(role: .destructive, action: onDelete) {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(.borderless)
-            .help("Remove override")
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor))
-        )
-    }
-}
-
 private struct PickerEmptyState: View {
     let title: String
     let systemImage: String
@@ -266,96 +143,6 @@ private struct PickerEmptyState: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(24)
-    }
-}
-
-private struct ShortcutRoutingCard: View {
-    @Binding var shortcut: ShortcutConfig
-    let prompts: [PromptConfig]
-    let onAddOverride: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(shortcut.key.displayName)
-                        .font(.headline)
-                    Text("Mode: \(shortcut.mode.displayName)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Default Prompt")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-
-                Picker("Default Prompt", selection: $shortcut.promptID) {
-                    Text("None")
-                        .tag(UUID?.none)
-                    ForEach(prompts) { prompt in
-                        Text(prompt.displayName)
-                            .tag(Optional(prompt.id))
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(maxWidth: 300, alignment: .leading)
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("App Overrides")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        Text("Only running apps appear in the picker. Overrides stay saved even when the app is not running.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    Button("Add Override...", action: onAddOverride)
-                        .buttonStyle(.borderedProminent)
-                        .disabled(prompts.isEmpty)
-                }
-
-                if shortcut.appPromptOverrides.isEmpty {
-                    Text(prompts.isEmpty
-                         ? "Create a prompt before adding per-app overrides."
-                         : "No app-specific overrides yet.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 8)
-                } else {
-                    ForEach(Array(shortcut.appPromptOverrides.indices), id: \.self) { index in
-                        AppOverrideRow(
-                            appOverride: Binding(
-                                get: { shortcut.appPromptOverrides[index] },
-                                set: { shortcut.appPromptOverrides[index] = $0 }
-                            ),
-                            prompts: prompts,
-                            onDelete: {
-                                shortcut.appPromptOverrides.remove(at: index)
-                            }
-                        )
-                    }
-                }
-            }
-        }
-        .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.secondary.opacity(0.08))
-        )
     }
 }
 
@@ -428,6 +215,7 @@ private struct RunningAppPickerSheet: View {
                             }
                             .padding(.vertical, 4)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
@@ -462,16 +250,12 @@ struct EnhancementsSettingsView: View {
     @State private var overridePickerRequest: OverridePickerRequest?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                openRouterCard
-                promptLibraryCard
-                routingCard
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        Form {
+            openRouterSection
+            promptLibrarySection
+            routingSections
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .formStyle(.grouped)
         .sheet(item: $promptEditorRequest) { request in
             Group {
                 if let promptBinding = binding(forPromptID: request.id) {
@@ -493,77 +277,136 @@ struct EnhancementsSettingsView: View {
         }
     }
 
-    private var openRouterCard: some View {
-        CardContainer(
-            title: "OpenRouter",
-            subtitle: "These credentials are used whenever a prompt is applied to a transcript."
-        ) {
-            EmptyView()
-        } content: {
-            VStack(alignment: .leading, spacing: 14) {
-                SecureField("API Key", text: $appState.openRouterApiKey)
-                    .textFieldStyle(.roundedBorder)
-                TextField("Model", text: $appState.openRouterModel)
-                    .textFieldStyle(.roundedBorder)
+    @ViewBuilder
+    private var openRouterSection: some View {
+        Section {
+            SecureField("API Key", text: $appState.openRouterApiKey)
+            TextField("Model", text: $appState.openRouterModel)
+        } header: {
+            Text("OpenRouter")
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("These credentials are used whenever a prompt is applied to a transcript.")
                 Text("Example models: `google/gemini-2.5-flash-lite`, `openai/gpt-5-nano`.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
     }
 
-    private var promptLibraryCard: some View {
-        CardContainer(
-            title: "Prompt Library",
-            subtitle: "Create reusable prompts, then route them per shortcut and per running application."
-        ) {
-            Button("Add Prompt") {
-                let prompt = PromptConfig.makeDefault()
-                appState.prompts.append(prompt)
-                promptEditorRequest = PromptEditorRequest(id: prompt.id)
-            }
-            .buttonStyle(.borderedProminent)
-        } content: {
-            VStack(alignment: .leading, spacing: 12) {
-                if appState.prompts.isEmpty {
-                    Text("No prompts yet. Add a prompt first, then assign it as a default or app-specific override.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 8)
-                } else {
-                    ForEach(appState.prompts) { prompt in
-                        PromptLibraryRow(
-                            prompt: prompt,
-                            usageSummary: promptUsageSummary(for: prompt.id),
-                            onEdit: {
+    @ViewBuilder
+    private var promptLibrarySection: some View {
+        Section {
+            if appState.prompts.isEmpty {
+                Text("No prompts yet. Add a prompt first, then assign it as a default or app-specific override.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(appState.prompts) { prompt in
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(prompt.displayName)
+                                .font(.headline)
+                            Text(prompt.previewText)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                            Text(promptUsageSummary(for: prompt.id))
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+
+                        Spacer(minLength: 12)
+
+                        HStack(spacing: 8) {
+                            Button("Edit") {
                                 promptEditorRequest = PromptEditorRequest(id: prompt.id)
-                            },
-                            onDelete: {
+                            }
+                            Button("Delete", role: .destructive) {
                                 appState.deletePrompt(id: prompt.id)
                             }
-                        )
+                        }
+                        .buttonStyle(.bordered)
                     }
+                    .padding(.vertical, 4)
                 }
             }
+        } header: {
+            HStack {
+                Text("Prompt Library")
+                Spacer()
+                Button("Add Prompt") {
+                    let prompt = PromptConfig.makeDefault()
+                    appState.prompts.append(prompt)
+                    promptEditorRequest = PromptEditorRequest(id: prompt.id)
+                }
+                .font(.caption.weight(.medium))
+            }
+        } footer: {
+            Text("Create reusable prompts, then route them per shortcut and per running application.")
         }
     }
 
-    private var routingCard: some View {
-        CardContainer(
-            title: "Shortcut Routing",
-            subtitle: "Set a default prompt per shortcut, then add app-specific overrides from the running-app picker."
-        ) {
-            EmptyView()
-        } content: {
-            VStack(alignment: .leading, spacing: 14) {
-                ForEach($appState.shortcuts) { $shortcut in
-                    ShortcutRoutingCard(
-                        shortcut: $shortcut,
-                        prompts: appState.prompts,
-                        onAddOverride: {
-                            overridePickerRequest = OverridePickerRequest(shortcutID: shortcut.id)
+    @ViewBuilder
+    private var routingSections: some View {
+        ForEach($appState.shortcuts) { $shortcut in
+            Section {
+                Picker("Default Prompt", selection: $shortcut.promptID) {
+                    Text("None").tag(UUID?.none)
+                    ForEach(appState.prompts) { prompt in
+                        Text(prompt.displayName).tag(Optional(prompt.id))
+                    }
+                }
+
+                ForEach(Array(shortcut.appPromptOverrides.indices), id: \.self) { index in
+                    HStack(alignment: .center, spacing: 12) {
+                        BundleIconView(
+                            bundleIdentifier: shortcut.appPromptOverrides[index].appBundleIdentifier,
+                            bundleURL: nil,
+                            size: 28
+                        )
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(shortcut.appPromptOverrides[index].appDisplayName)
+                                .font(.headline)
+                            Text(shortcut.appPromptOverrides[index].appBundleIdentifier)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                    )
+
+                        Spacer(minLength: 8)
+
+                        Picker("Prompt", selection: Binding(
+                            get: { shortcut.appPromptOverrides[index].promptID },
+                            set: { shortcut.appPromptOverrides[index].promptID = $0 }
+                        )) {
+                            ForEach(appState.prompts) { prompt in
+                                Text(prompt.displayName).tag(prompt.id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 200)
+                        .labelsHidden()
+
+                        Button(role: .destructive) {
+                            shortcut.appPromptOverrides.remove(at: index)
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Remove override")
+                    }
+                    .padding(.vertical, 2)
+                }
+
+                Button("Add App Override...") {
+                    overridePickerRequest = OverridePickerRequest(shortcutID: shortcut.id)
+                }
+                .disabled(appState.prompts.isEmpty)
+            } header: {
+                Text("\(shortcut.key.displayName) · \(shortcut.mode.displayName)")
+            } footer: {
+                if shortcut.appPromptOverrides.isEmpty {
+                    Text(appState.prompts.isEmpty
+                         ? "Create a prompt before adding per-app overrides."
+                         : "Only running apps appear in the picker. Overrides stay saved even when the app is not running.")
                 }
             }
         }

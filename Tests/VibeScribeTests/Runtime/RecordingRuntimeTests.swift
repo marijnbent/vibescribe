@@ -58,7 +58,26 @@ final class RecordingRuntimeTests: XCTestCase {
         XCTAssertEqual(harness.deepgram.connectCalls.count, 1)
     }
 
-    private func makeHarness() -> RuntimeHarness {
+    func testFinalizeIncludesResolvedEnhancementPromptMetadata() async {
+        let enhancement = EnhancementPromptContext(
+            name: "Slack tidy",
+            content: "clean this",
+            isForActiveApp: true
+        )
+        let harness = makeHarness(resolvedEnhancementPrompt: enhancement)
+
+        let ownerID = UUID()
+        harness.runtime.handle(action: .start(ownerShortcutID: ownerID, ownerMode: .hold, latched: false))
+        harness.runtime.handle(action: .stop)
+        harness.deepgram.completeClose()
+        await Task.yield()
+
+        XCTAssertEqual(harness.finalizations.value.first?.enhancementPrompt, enhancement)
+    }
+
+    private func makeHarness(
+        resolvedEnhancementPrompt: EnhancementPromptContext? = nil
+    ) -> RuntimeHarness {
         let clock = ManualClock()
         let scheduler = ManualScheduler(clock: clock)
         let audio = FakeAudioCapturePort()
@@ -75,7 +94,7 @@ final class RecordingRuntimeTests: XCTestCase {
             clock: clock,
             languageProvider: { .automatic },
             apiKeyProvider: { "dg_key" },
-            resolvedEnhancementPromptProvider: { _ in nil },
+            resolvedEnhancementPromptProvider: { _ in resolvedEnhancementPrompt },
             playSoundEffectsEnabledProvider: { false },
             muteDuringRecordingProvider: { false },
             soundPort: sound

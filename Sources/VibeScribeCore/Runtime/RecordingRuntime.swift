@@ -2,8 +2,14 @@ import Foundation
 import AppKit
 import AVFoundation
 
+struct EnhancementPromptContext: Equatable {
+    let name: String
+    let content: String
+    let isForActiveApp: Bool
+}
+
 struct RecordingFinalization {
-    let enhancementPrompt: String?
+    let enhancementPrompt: EnhancementPromptContext?
     let transcriptionError: String?
 }
 
@@ -16,7 +22,7 @@ final class RecordingRuntime {
 
     private let languageProvider: () -> DeepgramLanguage
     private let apiKeyProvider: () -> String
-    private let resolvedEnhancementPromptProvider: (UUID?) -> String?
+    private let resolvedEnhancementPromptProvider: (UUID?) -> EnhancementPromptContext?
     private let playSoundEffectsEnabledProvider: () -> Bool
     private let muteDuringRecordingProvider: () -> Bool
     private let soundPort: SoundPort
@@ -40,7 +46,7 @@ final class RecordingRuntime {
 
     private var currentRecordingFormat: AudioStreamFormat?
     private var pendingTranscriptionError: String?
-    private var pendingEnhancementPrompt: String?
+    private var pendingEnhancementPrompt: EnhancementPromptContext?
     private var deepgramReconnectAttempt = 0
     private var hasPlayedTranscriptionFailureSound = false
     private var didFinalizeCurrentSession = false
@@ -66,7 +72,7 @@ final class RecordingRuntime {
         clock: ClockPort,
         languageProvider: @escaping () -> DeepgramLanguage,
         apiKeyProvider: @escaping () -> String,
-        resolvedEnhancementPromptProvider: @escaping (UUID?) -> String?,
+        resolvedEnhancementPromptProvider: @escaping (UUID?) -> EnhancementPromptContext?,
         playSoundEffectsEnabledProvider: @escaping () -> Bool,
         muteDuringRecordingProvider: @escaping () -> Bool,
         soundPort: SoundPort,

@@ -128,11 +128,53 @@ final class PasteRuntimeTests: XCTestCase {
             }
         )
 
-        await runtime.pasteFinalTranscript(enhancementPrompt: "clean this", transcriptionError: nil)
+        await runtime.pasteFinalTranscript(
+            enhancementPrompt: EnhancementPromptContext(
+                name: "Clean",
+                content: "clean this",
+                isForActiveApp: false
+            ),
+            transcriptionError: nil
+        )
 
         XCTAssertEqual(pasteboard.writtenStrings.last, "raw transcript")
         XCTAssertEqual(appState.transcriptHistory.first?.enhancementError, "OpenRouter API key is not set.")
+        XCTAssertEqual(appState.transcriptHistory.first?.promptName, "Clean")
+        XCTAssertEqual(appState.transcriptHistory.first?.usedActiveAppPrompt, false)
         XCTAssertEqual(appState.appStatus, .idle)
+    }
+
+    func testEnhancementHistoryStoresActiveAppPromptMetadata() async {
+        let appState = AppState()
+        appState.historyLimit = .ten
+        appState.finalTranscript = "raw transcript"
+        appState.openRouterApiKey = "sk-test"
+        appState.openRouterModel = "openai/gpt-4o-mini"
+
+        let clock = ManualClock()
+        let scheduler = ManualScheduler(clock: clock)
+        let pasteboard = FakePasteboardPort()
+        let sound = FakeSoundPort()
+
+        let runtime = PasteRuntime(
+            appState: appState,
+            pasteboard: pasteboard,
+            soundPort: sound,
+            scheduler: scheduler,
+            enhancer: { transcript, _, _, _ in transcript.uppercased() }
+        )
+
+        await runtime.pasteFinalTranscript(
+            enhancementPrompt: EnhancementPromptContext(
+                name: "Slack tidy",
+                content: "clean this",
+                isForActiveApp: true
+            ),
+            transcriptionError: nil
+        )
+
+        XCTAssertEqual(appState.transcriptHistory.first?.promptName, "Slack tidy")
+        XCTAssertEqual(appState.transcriptHistory.first?.usedActiveAppPrompt, true)
     }
 
     func testPasteCommandFailureKeepsClipboardByDefault() async {

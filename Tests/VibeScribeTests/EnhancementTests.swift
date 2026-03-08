@@ -185,6 +185,43 @@ final class EnhancementTests: XCTestCase {
         XCTAssertEqual(content, "override")
     }
 
+    func testResolvedEnhancementPromptUsesDefaultPromptMetadata() {
+        let state = AppState()
+        let prompt = PromptConfig(id: UUID(), name: "Clean up", content: "clean this")
+        state.prompts = [prompt]
+        state.shortcuts[0].promptID = prompt.id
+
+        let resolved = state.resolvedEnhancementPrompt(forShortcutID: state.shortcuts[0].id)
+
+        XCTAssertEqual(resolved?.name, "Clean up")
+        XCTAssertEqual(resolved?.content, "clean this")
+        XCTAssertEqual(resolved?.isForActiveApp, false)
+    }
+
+    func testResolvedEnhancementPromptUsesAppOverrideMetadata() {
+        let state = AppState()
+        let defaultPrompt = PromptConfig(id: UUID(), name: "Default", content: "default")
+        let overridePrompt = PromptConfig(id: UUID(), name: "WhatsApp", content: "override")
+        state.prompts = [defaultPrompt, overridePrompt]
+        state.shortcuts[0].promptID = defaultPrompt.id
+        state.shortcuts[0].appPromptOverrides = [
+            AppPromptOverride(
+                appBundleIdentifier: "net.whatsapp.WhatsApp",
+                appDisplayName: "WhatsApp",
+                promptID: overridePrompt.id
+            )
+        ]
+
+        let resolved = state.resolvedEnhancementPrompt(
+            forShortcutID: state.shortcuts[0].id,
+            activeAppBundleIdentifier: "NET.WHATSAPP.WHATSAPP"
+        )
+
+        XCTAssertEqual(resolved?.name, "WhatsApp")
+        XCTAssertEqual(resolved?.content, "override")
+        XCTAssertEqual(resolved?.isForActiveApp, true)
+    }
+
     func testPromptContentForShortcutIDFallsBackToDefaultWhenNoAppOverrideMatches() {
         let state = AppState()
         let defaultPrompt = PromptConfig(id: UUID(), name: "Default", content: "default")

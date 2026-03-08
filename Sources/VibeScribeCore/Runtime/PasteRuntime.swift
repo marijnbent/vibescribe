@@ -33,7 +33,7 @@ final class PasteRuntime {
         self.clipboardRestoreDelay = clipboardRestoreDelay
     }
 
-    func pasteFinalTranscript(enhancementPrompt: String?, transcriptionError: String?) async {
+    func pasteFinalTranscript(enhancementPrompt: EnhancementPromptContext?, transcriptionError: String?) async {
         let finalText = appState.finalTranscript.trimmed
         let fallbackText = appState.lastTranscript.trimmed
         let rawText = finalText.isEmpty ? fallbackText : finalText
@@ -72,7 +72,7 @@ final class PasteRuntime {
                 do {
                     let enhanced = try await enhancer(
                         rawText,
-                        prompt,
+                        prompt.content,
                         appState.openRouterApiKey.trimmed,
                         model
                     )
@@ -117,7 +117,9 @@ final class PasteRuntime {
             rawText,
             enhancedText: enhancedText,
             transcriptionError: transcriptionError,
-            enhancementError: enhancementError
+            enhancementError: enhancementError,
+            promptName: enhancementPrompt?.name,
+            usedActiveAppPrompt: enhancementPrompt?.isForActiveApp ?? false
         )
         if let transcriptionError {
             appState.addLog("Transcript completed with warning: \(transcriptionError)", level: .warning)

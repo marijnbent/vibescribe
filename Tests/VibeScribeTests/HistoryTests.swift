@@ -163,6 +163,19 @@ final class HistoryTests: XCTestCase {
         XCTAssertNil(state.transcriptHistory[0].enhancedText)
     }
 
+    func testAddTranscriptStoresPromptMetadata() {
+        let state = AppState()
+        state.addTranscriptToHistory(
+            "raw text",
+            promptName: "Clean up",
+            usedActiveAppPrompt: true
+        )
+
+        XCTAssertEqual(state.transcriptHistory[0].promptName, "Clean up")
+        XCTAssertTrue(state.transcriptHistory[0].usedActiveAppPrompt)
+        XCTAssertEqual(state.transcriptHistory[0].promptSourceLabel, "Active app")
+    }
+
     func testDisplayTextPrefersEnhancedText() {
         let entry = TranscriptHistoryEntry(timestamp: Date(), text: "raw", enhancedText: "enhanced")
         XCTAssertEqual(entry.displayText, "enhanced")
