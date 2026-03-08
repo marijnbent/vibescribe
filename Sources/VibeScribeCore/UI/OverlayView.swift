@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct OverlayView: View {
@@ -11,6 +12,10 @@ struct OverlayView: View {
     var body: some View {
         HStack(spacing: 8) {
             PulseOrb(pulse: pulse, enhancing: isEnhancing)
+
+            if let appIcon = appState.overlayAppIcon {
+                OverlayAppIcon(icon: appIcon)
+            }
 
             if isEnhancing {
                 SparkleStars()
@@ -109,6 +114,18 @@ struct OverlayView: View {
         .rotationEffect(.degrees(25))
         .offset(x: shimmer ? 120 : -140, y: shimmer ? -12 : 12)
         .blendMode(.screen)
+    }
+}
+
+private struct OverlayAppIcon: View {
+    let icon: NSImage
+
+    var body: some View {
+        Image(nsImage: icon)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: 18, height: 18)
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
     }
 }
 

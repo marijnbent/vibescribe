@@ -80,18 +80,25 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             deepgram: deepgramPort,
             scheduler: schedulerPort,
             clock: clockPort,
+            activeApplicationProvider: {
+                let app = NSWorkspace.shared.frontmostApplication
+                return ActiveApplicationContext(
+                    bundleIdentifier: app?.bundleIdentifier,
+                    icon: app?.icon
+                )
+            },
             languageProvider: { [weak self] in
                 self?.appState.deepgramLanguage ?? .automatic
             },
             apiKeyProvider: { [weak self] in
                 self?.appState.apiKey ?? ""
             },
-            resolvedEnhancementPromptProvider: { [weak self] shortcutID in
+            resolvedEnhancementPromptProvider: { [weak self] shortcutID, activeAppBundleIdentifier in
                 guard let self else { return nil }
                 guard let shortcutID else { return nil }
                 return self.appState.resolvedEnhancementPrompt(
                     forShortcutID: shortcutID,
-                    activeAppBundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                    activeAppBundleIdentifier: activeAppBundleIdentifier
                 )
             },
             playSoundEffectsEnabledProvider: { [weak self] in
@@ -149,8 +156,8 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         recordingRuntime.onPhaseChanged = { [weak self] phase in
             self?.appState.recordingPhase = phase
         }
-        recordingRuntime.onOverlayUpdate = { [weak self] visible, label in
-            self?.setOverlay(visible: visible, label: label)
+        recordingRuntime.onOverlayUpdate = { [weak self] visible, label, appIcon in
+            self?.setOverlay(visible: visible, label: label, appIcon: appIcon)
         }
         recordingRuntime.onAudioLevel = { [weak self] level in
             self?.appState.audioLevel = level
@@ -181,7 +188,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         }
 
         pasteRuntime.onHideOverlay = { [weak self] in
-            self?.setOverlay(visible: false, label: nil)
+            self?.setOverlay(visible: false, label: nil, appIcon: nil)
         }
     }
 
@@ -212,10 +219,11 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func setOverlay(visible: Bool, label: String?) {
+    private func setOverlay(visible: Bool, label: String?, appIcon: NSImage?) {
         if let label {
             appState.overlayLabel = label
         }
+        appState.overlayAppIcon = visible ? appIcon : nil
 
         if visible {
             appState.overlayVisible = true

@@ -138,57 +138,39 @@ struct MainView: View {
                         .foregroundStyle(.secondary)
                 }
             } else {
-                Section {
-                    ForEach(appState.transcriptHistory) { entry in
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(alignment: .firstTextBaseline) {
-                                Text(Self.formatter.string(from: entry.timestamp))
-                                    .font(.caption)
+                ForEach(appState.transcriptHistory) { entry in
+                    Section {
+                        if let transcriptionError = entry.transcriptionError {
+                            issueRow(
+                                label: "Transcription error",
+                                message: transcriptionError,
+                                showsIcon: entry.shouldShowTranscriptionWarningIcon
+                            )
+                        }
+
+                        if let enhancementError = entry.enhancementError {
+                            issueRow(label: "Enhancement error", message: enhancementError)
+                        }
+
+                        if let promptName = entry.promptName {
+                            LabeledContent(promptName) {
+                                Text(entry.promptSourceLabel)
                                     .foregroundStyle(.secondary)
-                                Spacer()
-                            }
-
-                            if let transcriptionError = entry.transcriptionError {
-                                issueRow(
-                                    label: "Transcription",
-                                    message: transcriptionError,
-                                    showsIcon: entry.shouldShowTranscriptionWarningIcon
-                                )
-                            }
-
-                            if let enhancementError = entry.enhancementError {
-                                issueRow(
-                                    label: "Enhancement",
-                                    message: enhancementError
-                                )
-                            }
-
-                            if let promptName = entry.promptName {
-                                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                    Text("Prompt")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .textCase(.uppercase)
-                                    Text(promptName)
-                                        .font(.caption)
-                                    Spacer()
-                                    Text(entry.promptSourceLabel)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-
-                            let original = entry.text.trimmed
-                            let enhanced = entry.enhancedText?.trimmed ?? ""
-                            if !original.isEmpty, !enhanced.isEmpty {
-                                historyRow(label: "Original", text: original, entryID: entry.id)
-                                historyRow(label: "Enhanced", text: enhanced, entryID: entry.id)
-                            } else if !enhanced.isEmpty {
-                                historyRow(label: "Enhanced", text: enhanced, entryID: entry.id)
-                            } else if !original.isEmpty {
-                                historyRow(label: nil, text: original, entryID: entry.id)
                             }
                         }
+
+                        let original = entry.text.trimmed
+                        let enhanced = entry.enhancedText?.trimmed ?? ""
+                        if !original.isEmpty, !enhanced.isEmpty {
+                            historyRow(label: "Original", text: original, entryID: entry.id)
+                            historyRow(label: "Enhanced", text: enhanced, entryID: entry.id)
+                        } else if !enhanced.isEmpty {
+                            historyRow(label: "Enhanced", text: enhanced, entryID: entry.id)
+                        } else if !original.isEmpty {
+                            historyRow(label: nil, text: original, entryID: entry.id)
+                        }
+                    } header: {
+                        Text(Self.formatter.string(from: entry.timestamp))
                     }
                 }
             }
@@ -257,39 +239,38 @@ struct MainView: View {
     }
 
     private func historyRow(label: String?, text: String, entryID: UUID) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
                 if let label {
                     Text(label)
-                        .font(.caption2)
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
                 }
-                Spacer()
-                Button {
-                    let pasteboard = NSPasteboard.general
-                    pasteboard.clearContents()
-                    pasteboard.setString(text, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                }
-                .buttonStyle(.borderless)
-                .font(.caption)
-                .help("Copy \(label?.lowercased() ?? "transcript")")
-            }
-            Text(text)
-                .lineLimit(expandedHistoryEntries.contains(entryID) ? nil : 5)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        if expandedHistoryEntries.contains(entryID) {
-                            expandedHistoryEntries.remove(entryID)
-                        } else {
-                            expandedHistoryEntries.insert(entryID)
+                Text(text)
+                    .lineLimit(expandedHistoryEntries.contains(entryID) ? nil : 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if expandedHistoryEntries.contains(entryID) {
+                                expandedHistoryEntries.remove(entryID)
+                            } else {
+                                expandedHistoryEntries.insert(entryID)
+                            }
                         }
                     }
-                }
+            }
+
+            Button {
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(text, forType: .string)
+            } label: {
+                Image(systemName: "doc.on.doc")
+            }
+            .buttonStyle(.borderless)
+            .font(.caption)
+            .help("Copy \(label?.lowercased() ?? "transcript")")
         }
     }
 

@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import VibeScribeCore
 
@@ -64,7 +65,9 @@ final class RecordingRuntimeTests: XCTestCase {
             content: "clean this",
             isForActiveApp: true
         )
-        let harness = makeHarness(resolvedEnhancementPrompt: enhancement)
+        let harness = makeHarness(
+            resolvedEnhancementPromptProvider: { _, _ in enhancement }
+        )
 
         let ownerID = UUID()
         harness.runtime.handle(action: .start(ownerShortcutID: ownerID, ownerMode: .hold, latched: false))
@@ -75,8 +78,51 @@ final class RecordingRuntimeTests: XCTestCase {
         XCTAssertEqual(harness.finalizations.value.first?.enhancementPrompt, enhancement)
     }
 
+    func testCapturesActiveAppPromptAndIconAtRecordingStart() async {
+        let slackIcon = NSImage(size: NSSize(width: 18, height: 18))
+        var activeApplication = ActiveApplicationContext(
+            bundleIdentifier: "com.tinyspeck.slackmacgap",
+            icon: slackIcon
+        )
+        let harness = makeHarness(
+            activeApplicationProvider: { activeApplication },
+            resolvedEnhancementPromptProvider: { _, bundleIdentifier in
+                guard bundleIdentifier == "com.tinyspeck.slackmacgap" else { return nil }
+                return EnhancementPromptContext(
+                    name: "Slack tidy",
+                    content: "clean this",
+                    isForActiveApp: true
+                )
+            }
+        )
+        var overlayUpdates: [(Bool, String, Bool)] = []
+        harness.runtime.onOverlayUpdate = { visible, label, icon in
+            overlayUpdates.append((visible, label, icon != nil))
+        }
+
+        let ownerID = UUID()
+        harness.runtime.handle(action: .start(ownerShortcutID: ownerID, ownerMode: .hold, latched: false))
+
+        activeApplication = ActiveApplicationContext(
+            bundleIdentifier: "com.apple.TextEdit",
+            icon: nil
+        )
+
+        harness.runtime.handle(action: .stop)
+        harness.deepgram.completeClose()
+        await Task.yield()
+
+        XCTAssertEqual(harness.finalizations.value.first?.enhancementPrompt?.name, "Slack tidy")
+        XCTAssertEqual(overlayUpdates.first?.0, true)
+        XCTAssertEqual(overlayUpdates.first?.1, "Listening")
+        XCTAssertEqual(overlayUpdates.first?.2, true)
+        XCTAssertEqual(overlayUpdates.last?.1, "Enhancing")
+        XCTAssertEqual(overlayUpdates.last?.2, true)
+    }
+
     private func makeHarness(
-        resolvedEnhancementPrompt: EnhancementPromptContext? = nil
+        activeApplicationProvider: @escaping () -> ActiveApplicationContext? = { nil },
+        resolvedEnhancementPromptProvider: @escaping (UUID?, String?) -> EnhancementPromptContext? = { _, _ in nil }
     ) -> RuntimeHarness {
         let clock = ManualClock()
         let scheduler = ManualScheduler(clock: clock)
@@ -92,9 +138,10 @@ final class RecordingRuntimeTests: XCTestCase {
             deepgram: deepgram,
             scheduler: scheduler,
             clock: clock,
+            activeApplicationProvider: activeApplicationProvider,
             languageProvider: { .automatic },
             apiKeyProvider: { "dg_key" },
-            resolvedEnhancementPromptProvider: { _ in resolvedEnhancementPrompt },
+            resolvedEnhancementPromptProvider: resolvedEnhancementPromptProvider,
             playSoundEffectsEnabledProvider: { false },
             muteDuringRecordingProvider: { false },
             soundPort: sound

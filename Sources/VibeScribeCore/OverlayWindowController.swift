@@ -102,7 +102,7 @@ final class OverlayWindowController {
     private func targetFrame(screen: NSScreen) -> CGRect {
         let fullFrame = screen.frame
         let visibleFrame = screen.visibleFrame
-        let width = min(90, fullFrame.width - 80)
+        let width = min(overlayWidth, fullFrame.width - 80)
         let height: CGFloat = 32
         let x = fullFrame.midX - width / 2
         let y: CGFloat
@@ -113,6 +113,10 @@ final class OverlayWindowController {
             y = visibleFrame.minY + 28
         }
         return CGRect(x: x, y: y, width: width, height: height)
+    }
+
+    private var overlayWidth: CGFloat {
+        appState.overlayAppIcon == nil ? 90 : 116
     }
 
     private func offscreenFrame(screen: NSScreen, width: CGFloat, height: CGFloat) -> CGRect {

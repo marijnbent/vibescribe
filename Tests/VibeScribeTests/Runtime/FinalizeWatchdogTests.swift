@@ -17,9 +17,10 @@ final class FinalizeWatchdogTests: XCTestCase {
             deepgram: deepgram,
             scheduler: scheduler,
             clock: clock,
+            activeApplicationProvider: { nil },
             languageProvider: { .automatic },
             apiKeyProvider: { "dg_key" },
-            resolvedEnhancementPromptProvider: { _ in
+            resolvedEnhancementPromptProvider: { _, _ in
                 EnhancementPromptContext(
                     name: "Clean",
                     content: "clean this",

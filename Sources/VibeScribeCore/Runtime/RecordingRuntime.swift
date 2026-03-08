@@ -2,6 +2,11 @@ import Foundation
 import AppKit
 import AVFoundation
 
+struct ActiveApplicationContext {
+    let bundleIdentifier: String?
+    let icon: NSImage?
+}
+
 struct EnhancementPromptContext: Equatable {
     let name: String
     let content: String
@@ -20,9 +25,10 @@ final class RecordingRuntime {
     private let scheduler: SchedulerPort
     private let clock: ClockPort
 
+    private let activeApplicationProvider: () -> ActiveApplicationContext?
     private let languageProvider: () -> DeepgramLanguage
     private let apiKeyProvider: () -> String
-    private let resolvedEnhancementPromptProvider: (UUID?) -> EnhancementPromptContext?
+    private let resolvedEnhancementPromptProvider: (UUID?, String?) -> EnhancementPromptContext?
     private let playSoundEffectsEnabledProvider: () -> Bool
     private let muteDuringRecordingProvider: () -> Bool
     private let soundPort: SoundPort
@@ -45,6 +51,7 @@ final class RecordingRuntime {
     }
 
     private var currentRecordingFormat: AudioStreamFormat?
+    private var currentActiveApplication: ActiveApplicationContext?
     private var pendingTranscriptionError: String?
     private var pendingEnhancementPrompt: EnhancementPromptContext?
     private var deepgramReconnectAttempt = 0
@@ -55,7 +62,7 @@ final class RecordingRuntime {
     var onLog: ((String, LogLevel) -> Void)?
     var onPhaseChanged: ((RecordingPhase) -> Void)?
     var onOwnershipChanged: ((RecordingOwnership?) -> Void)?
-    var onOverlayUpdate: ((Bool, String) -> Void)?
+    var onOverlayUpdate: ((Bool, String, NSImage?) -> Void)?
     var onAudioLevel: ((CGFloat) -> Void)?
     var onTranscript: ((String, Bool) -> Void)?
     var onWillStartRecording: (() -> Void)?
@@ -70,9 +77,10 @@ final class RecordingRuntime {
         deepgram: DeepgramPort,
         scheduler: SchedulerPort,
         clock: ClockPort,
+        activeApplicationProvider: @escaping () -> ActiveApplicationContext?,
         languageProvider: @escaping () -> DeepgramLanguage,
         apiKeyProvider: @escaping () -> String,
-        resolvedEnhancementPromptProvider: @escaping (UUID?) -> EnhancementPromptContext?,
+        resolvedEnhancementPromptProvider: @escaping (UUID?, String?) -> EnhancementPromptContext?,
         playSoundEffectsEnabledProvider: @escaping () -> Bool,
         muteDuringRecordingProvider: @escaping () -> Bool,
         soundPort: SoundPort,
@@ -85,6 +93,7 @@ final class RecordingRuntime {
         self.deepgram = deepgram
         self.scheduler = scheduler
         self.clock = clock
+        self.activeApplicationProvider = activeApplicationProvider
         self.languageProvider = languageProvider
         self.apiKeyProvider = apiKeyProvider
         self.resolvedEnhancementPromptProvider = resolvedEnhancementPromptProvider
@@ -170,10 +179,18 @@ final class RecordingRuntime {
 
             pendingTranscriptionError = nil
             pendingEnhancementPrompt = nil
+            currentActiveApplication = nil
             hasPlayedTranscriptionFailureSound = false
             deepgramReconnectAttempt = 0
             didFinalizeCurrentSession = false
             onWillStartRecording?()
+
+            let activeApplication = activeApplicationProvider()
+            currentActiveApplication = activeApplication
+            pendingEnhancementPrompt = resolvedEnhancementPromptProvider(
+                ownerShortcutID,
+                activeApplication?.bundleIdentifier
+            )
 
             let format = try audioCapture.start()
             currentRecordingFormat = format
@@ -188,7 +205,7 @@ final class RecordingRuntime {
 
             phase = .recording
             onStatus?(.listening)
-            onOverlayUpdate?(true, "Listening")
+            onOverlayUpdate?(true, "Listening", overlayAppIcon)
             onLog?("Audio capture started (\(format.sampleRate) Hz, \(format.channels) ch).", .info)
             deepgram.connect(apiKey: apiKey, format: format, language: languageProvider())
 
@@ -210,6 +227,8 @@ final class RecordingRuntime {
         } catch {
             phase = .idle
             ownership = nil
+            currentActiveApplication = nil
+            pendingEnhancementPrompt = nil
             onStatus?(.failedToStartAudioCapture(error.localizedDescription))
             onLog?("Failed to start audio capture: \(error.localizedDescription)", .error)
         }
@@ -227,12 +246,10 @@ final class RecordingRuntime {
         onStatus?(.finalizing)
         onRestoreMute?()
 
-        let shortcutID = ownership?.ownerShortcutID
-        pendingEnhancementPrompt = resolvedEnhancementPromptProvider(shortcutID)
         if pendingEnhancementPrompt != nil {
-            onOverlayUpdate?(true, "Enhancing")
+            onOverlayUpdate?(true, "Enhancing", overlayAppIcon)
         } else {
-            onOverlayUpdate?(false, "Listening")
+            onOverlayUpdate?(false, "Listening", nil)
         }
 
         didFinalizeCurrentSession = false
@@ -407,6 +424,7 @@ final class RecordingRuntime {
         phase = .idle
         ownership = nil
         currentRecordingFormat = nil
+        currentActiveApplication = nil
         pendingEnhancementPrompt = nil
         deepgramReconnectAttempt = 0
         didFinalizeCurrentSession = false
@@ -414,7 +432,7 @@ final class RecordingRuntime {
         onAudioLevel?(0)
 
         if hideOverlay {
-            onOverlayUpdate?(false, "Listening")
+            onOverlayUpdate?(false, "Listening", nil)
         }
 
         if clearPendingTranscriptionError {
@@ -431,6 +449,11 @@ final class RecordingRuntime {
     private func playErrorSound(force: Bool = false) {
         guard force || playSoundEffectsEnabledProvider() else { return }
         soundPort.play(named: "Basso")
+    }
+
+    private var overlayAppIcon: NSImage? {
+        guard pendingEnhancementPrompt?.isForActiveApp == true else { return nil }
+        return currentActiveApplication?.icon
     }
 }
 
