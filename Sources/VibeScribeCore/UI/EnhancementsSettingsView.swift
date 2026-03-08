@@ -287,7 +287,8 @@ struct EnhancementsSettingsView: View {
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
                 Text("These credentials are used whenever a prompt is applied to a transcript.")
-                Text("Example models: `google/gemini-2.5-flash-lite`, `openai/gpt-5-nano`.")
+                Text("Suggested model: `inception/mercury-2`.")
+                Text("Use this one if you want the fastest enhancement response.")
             }
         }
     }
