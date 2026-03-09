@@ -2,25 +2,25 @@ import AppKit
 import SwiftUI
 
 struct OverlayView: View {
-    @ObservedObject var appState: AppState
+    @ObservedObject var sessionState: SessionState
     @State private var pulse = false
     @State private var appear = false
     @State private var shimmer = false
 
-    private var isEnhancing: Bool { appState.overlayLabel == "Enhancing" }
+    private var isEnhancing: Bool { sessionState.overlayLabel == "Enhancing" }
 
     var body: some View {
         HStack(spacing: 8) {
             PulseOrb(pulse: pulse, enhancing: isEnhancing)
 
-            if let appIcon = appState.overlayAppIcon {
+            if let appIcon = sessionState.overlayAppIcon {
                 OverlayAppIcon(icon: appIcon)
             }
 
             if isEnhancing {
                 SparkleStars()
             } else {
-                MiniWaveform(level: appState.audioLevel)
+                MiniWaveform(level: sessionState.audioLevel)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -39,11 +39,11 @@ struct OverlayView: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(.white)
         )
-        .id(appState.overlayPulseID)
+        .id(sessionState.overlayPulseID)
         .onAppear {
-            pulse = appState.overlayVisible
+            pulse = sessionState.overlayVisible
             withAnimation(.spring(response: 0.42, dampingFraction: 0.72, blendDuration: 0.2)) {
-                appear = appState.overlayVisible
+                appear = sessionState.overlayVisible
             }
             withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
                 shimmer = true
@@ -54,7 +54,7 @@ struct OverlayView: View {
             pulse = false
             shimmer = false
         }
-        .onChange(of: appState.overlayVisible) { visible in
+        .onChange(of: sessionState.overlayVisible) { visible in
             pulse = visible
             if visible {
                 withAnimation(.spring(response: 0.42, dampingFraction: 0.72, blendDuration: 0.2)) {

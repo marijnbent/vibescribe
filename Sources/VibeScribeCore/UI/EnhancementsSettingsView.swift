@@ -243,7 +243,7 @@ private struct RunningAppPickerSheet: View {
 }
 
 struct EnhancementsSettingsView: View {
-    @ObservedObject var appState: AppState
+    @ObservedObject var viewModel: EnhancementsSettingsViewModel
 
     @StateObject private var pickerModel = RunningAppPickerModel()
     @State private var promptEditorRequest: PromptEditorRequest?
@@ -258,7 +258,7 @@ struct EnhancementsSettingsView: View {
         .formStyle(.grouped)
         .sheet(item: $promptEditorRequest) { request in
             Group {
-                if let promptBinding = binding(forPromptID: request.id) {
+                if let promptBinding = viewModel.bindingForPromptID(request.id) {
                     PromptEditorSheet(prompt: promptBinding)
                 } else {
                     Text("Prompt not found.")
@@ -268,7 +268,7 @@ struct EnhancementsSettingsView: View {
         }
         .sheet(item: $overridePickerRequest) { request in
             RunningAppPickerSheet(model: pickerModel) { app in
-                appState.upsertAppPromptOverride(
+                viewModel.upsertAppPromptOverride(
                     shortcutID: request.shortcutID,
                     appBundleIdentifier: app.bundleIdentifier,
                     appDisplayName: app.displayName
@@ -280,8 +280,8 @@ struct EnhancementsSettingsView: View {
     @ViewBuilder
     private var openRouterSection: some View {
         Section {
-            SecureField("API Key", text: $appState.openRouterApiKey)
-            TextField("Model", text: $appState.openRouterModel)
+            SecureField("API Key", text: viewModel.binding(for: \.openRouterApiKey))
+            TextField("Model", text: viewModel.binding(for: \.openRouterModel))
         } header: {
             Text("OpenRouter")
         } footer: {
@@ -296,11 +296,11 @@ struct EnhancementsSettingsView: View {
     @ViewBuilder
     private var promptLibrarySection: some View {
         Section {
-            if appState.prompts.isEmpty {
+            if viewModel.prompts.isEmpty {
                 Text("No prompts yet. Add a prompt first, then assign it as a default or app-specific override.")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(appState.prompts) { prompt in
+                ForEach(viewModel.prompts) { prompt in
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(prompt.displayName)
@@ -309,7 +309,7 @@ struct EnhancementsSettingsView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
-                            Text(promptUsageSummary(for: prompt.id))
+                            Text(viewModel.promptUsageSummary(for: prompt.id))
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
                         }
@@ -321,7 +321,7 @@ struct EnhancementsSettingsView: View {
                                 promptEditorRequest = PromptEditorRequest(id: prompt.id)
                             }
                             Button("Delete", role: .destructive) {
-                                appState.deletePrompt(id: prompt.id)
+                                viewModel.deletePrompt(id: prompt.id)
                             }
                         }
                         .buttonStyle(.bordered)
@@ -334,8 +334,7 @@ struct EnhancementsSettingsView: View {
                 Text("Prompt Library")
                 Spacer()
                 Button("Add Prompt") {
-                    let prompt = PromptConfig.makeDefault()
-                    appState.prompts.append(prompt)
+                    let prompt = viewModel.addPrompt()
                     promptEditorRequest = PromptEditorRequest(id: prompt.id)
                 }
                 .font(.caption.weight(.medium))
@@ -347,104 +346,80 @@ struct EnhancementsSettingsView: View {
 
     @ViewBuilder
     private var routingSections: some View {
-        ForEach($appState.shortcuts) { $shortcut in
-            Section {
-                Picker("Default Prompt", selection: $shortcut.promptID) {
-                    Text("None").tag(UUID?.none)
-                    ForEach(appState.prompts) { prompt in
-                        Text(prompt.displayName).tag(Optional(prompt.id))
-                    }
-                }
-
-                ForEach(Array(shortcut.appPromptOverrides.indices), id: \.self) { index in
-                    HStack(alignment: .center, spacing: 12) {
-                        BundleIconView(
-                            bundleIdentifier: shortcut.appPromptOverrides[index].appBundleIdentifier,
-                            bundleURL: nil,
-                            size: 28
-                        )
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(shortcut.appPromptOverrides[index].appDisplayName)
-                                .font(.headline)
-                            Text(shortcut.appPromptOverrides[index].appBundleIdentifier)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+        ForEach(viewModel.shortcuts) { shortcut in
+            if let shortcutBinding = viewModel.bindingForShortcutID(shortcut.id) {
+                Section {
+                    Picker("Default Prompt", selection: shortcutBinding.promptID) {
+                        Text("None").tag(UUID?.none)
+                        ForEach(viewModel.prompts) { prompt in
+                            Text(prompt.displayName).tag(Optional(prompt.id))
                         }
+                    }
 
-                        Spacer(minLength: 8)
+                    ForEach(Array(shortcutBinding.wrappedValue.appPromptOverrides.indices), id: \.self) { index in
+                        HStack(alignment: .center, spacing: 12) {
+                            BundleIconView(
+                                bundleIdentifier: shortcutBinding.wrappedValue.appPromptOverrides[index].appBundleIdentifier,
+                                bundleURL: nil,
+                                size: 28
+                            )
 
-                        Picker("Prompt", selection: Binding(
-                            get: { shortcut.appPromptOverrides[index].promptID },
-                            set: { shortcut.appPromptOverrides[index].promptID = $0 }
-                        )) {
-                            ForEach(appState.prompts) { prompt in
-                                Text(prompt.displayName).tag(prompt.id)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(shortcutBinding.wrappedValue.appPromptOverrides[index].appDisplayName)
+                                    .font(.headline)
+                                Text(shortcutBinding.wrappedValue.appPromptOverrides[index].appBundleIdentifier)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
-                        }
-                        .pickerStyle(.menu)
-                        .frame(width: 200)
-                        .labelsHidden()
 
-                        Button(role: .destructive) {
-                            shortcut.appPromptOverrides.remove(at: index)
-                        } label: {
-                            Image(systemName: "trash")
+                            Spacer(minLength: 8)
+
+                            Picker(
+                                "Prompt",
+                                selection: Binding(
+                                    get: { shortcutBinding.wrappedValue.appPromptOverrides[index].promptID },
+                                    set: { newValue in
+                                        var updated = shortcutBinding.wrappedValue
+                                        updated.appPromptOverrides[index].promptID = newValue
+                                        shortcutBinding.wrappedValue = updated
+                                    }
+                                )
+                            ) {
+                                ForEach(viewModel.prompts) { prompt in
+                                    Text(prompt.displayName).tag(prompt.id)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 200)
+                            .labelsHidden()
+
+                            Button(role: .destructive) {
+                                var updated = shortcutBinding.wrappedValue
+                                updated.appPromptOverrides.remove(at: index)
+                                shortcutBinding.wrappedValue = updated
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Remove override")
                         }
-                        .buttonStyle(.borderless)
-                        .help("Remove override")
+                        .padding(.vertical, 2)
                     }
-                    .padding(.vertical, 2)
-                }
 
-                Button("Add App Override...") {
-                    overridePickerRequest = OverridePickerRequest(shortcutID: shortcut.id)
-                }
-                .disabled(appState.prompts.isEmpty)
-            } header: {
-                Text("\(shortcut.key.displayName) · \(shortcut.mode.displayName)")
-            } footer: {
-                if shortcut.appPromptOverrides.isEmpty {
-                    Text(appState.prompts.isEmpty
-                         ? "Create a prompt before adding per-app overrides."
-                         : "Only running apps appear in the picker. Overrides stay saved even when the app is not running.")
+                    Button("Add App Override...") {
+                        overridePickerRequest = OverridePickerRequest(shortcutID: shortcut.id)
+                    }
+                    .disabled(viewModel.prompts.isEmpty)
+                } header: {
+                    Text("\(shortcut.key.displayName) · \(shortcut.mode.displayName)")
+                } footer: {
+                    if shortcut.appPromptOverrides.isEmpty {
+                        Text(viewModel.prompts.isEmpty
+                             ? "Create a prompt before adding per-app overrides."
+                             : "Only running apps appear in the picker. Overrides stay saved even when the app is not running.")
+                    }
                 }
             }
-        }
-    }
-
-    private func binding(forPromptID promptID: UUID) -> Binding<PromptConfig>? {
-        guard let index = appState.prompts.firstIndex(where: { $0.id == promptID }) else {
-            return nil
-        }
-        return $appState.prompts[index]
-    }
-
-    private func promptUsageSummary(for promptID: UUID) -> String {
-        let defaultShortcutCount = appState.shortcuts.filter { $0.promptID == promptID }.count
-        let overrideCount = appState.shortcuts.reduce(0) { partialResult, shortcut in
-            partialResult + shortcut.appPromptOverrides.filter { $0.promptID == promptID }.count
-        }
-
-        switch (defaultShortcutCount, overrideCount) {
-        case (0, 0):
-            return "Unused"
-        case (_, 0):
-            return defaultShortcutCount == 1
-                ? "Used as the default for 1 shortcut"
-                : "Used as the default for \(defaultShortcutCount) shortcuts"
-        case (0, _):
-            return overrideCount == 1
-                ? "Used by 1 app override"
-                : "Used by \(overrideCount) app overrides"
-        default:
-            let defaultText = defaultShortcutCount == 1
-                ? "default for 1 shortcut"
-                : "default for \(defaultShortcutCount) shortcuts"
-            let overrideText = overrideCount == 1
-                ? "1 app override"
-                : "\(overrideCount) app overrides"
-            return "Used as \(defaultText) and \(overrideText)"
         }
     }
 }

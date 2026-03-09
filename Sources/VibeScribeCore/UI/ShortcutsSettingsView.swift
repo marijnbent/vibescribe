@@ -1,42 +1,44 @@
 import SwiftUI
 
 struct ShortcutsSettingsView: View {
-    @ObservedObject var appState: AppState
+    @ObservedObject var viewModel: ShortcutsSettingsViewModel
 
     var body: some View {
         Form {
             Section {
-                if appState.shortcuts.isEmpty {
+                if viewModel.shortcuts.isEmpty {
                     Text("No shortcuts configured.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach($appState.shortcuts) { $shortcut in
-                        let usedKeys = Set(appState.shortcuts.filter { $0.id != shortcut.id }.map(\.key))
-                        HStack(spacing: 12) {
-                            Picker("Key", selection: $shortcut.key) {
-                                ForEach(ShortcutKey.allCases.filter { $0 == shortcut.key || !usedKeys.contains($0) }) { key in
-                                    Text(key.displayName).tag(key)
+                    ForEach(viewModel.shortcuts) { shortcut in
+                        if let shortcutBinding = viewModel.binding(forShortcutID: shortcut.id) {
+                            let usedKeys = viewModel.usedKeys(excluding: shortcut.id)
+                            HStack(spacing: 12) {
+                                Picker("Key", selection: shortcutBinding.key) {
+                                    ForEach(ShortcutKey.allCases.filter { $0 == shortcut.key || !usedKeys.contains($0) }) { key in
+                                        Text(key.displayName).tag(key)
+                                    }
                                 }
-                            }
-                            .labelsHidden()
-                            .frame(width: 180)
+                                .labelsHidden()
+                                .frame(width: 180)
 
-                            Picker("Mode", selection: $shortcut.mode) {
-                                ForEach(ShortcutMode.allCases) { mode in
-                                    Text(mode.displayName).tag(mode)
+                                Picker("Mode", selection: shortcutBinding.mode) {
+                                    ForEach(ShortcutMode.allCases) { mode in
+                                        Text(mode.displayName).tag(mode)
+                                    }
                                 }
-                            }
-                            .labelsHidden()
-                            .frame(width: 160)
+                                .labelsHidden()
+                                .frame(width: 160)
 
-                            Button {
-                                appState.shortcuts.removeAll { $0.id == shortcut.id }
-                            } label: {
-                                Image(systemName: "minus.circle")
+                                Button {
+                                    viewModel.removeShortcut(id: shortcut.id)
+                                } label: {
+                                    Image(systemName: "minus.circle")
+                                }
+                                .buttonStyle(.borderless)
+                                .disabled(viewModel.shortcuts.count <= 1)
+                                .help("Remove shortcut")
                             }
-                            .buttonStyle(.borderless)
-                            .disabled(appState.shortcuts.count <= 1)
-                            .help("Remove shortcut")
                         }
                     }
                 }
@@ -45,14 +47,11 @@ struct ShortcutsSettingsView: View {
                     Text("Shortcuts")
                     Spacer()
                     Button {
-                        let usedKeys = Set(appState.shortcuts.map(\.key))
-                        if let nextKey = ShortcutKey.allCases.first(where: { !usedKeys.contains($0) }) {
-                            appState.shortcuts.append(ShortcutConfig(id: UUID(), key: nextKey, mode: .both))
-                        }
+                        viewModel.addShortcut()
                     } label: {
                         Image(systemName: "plus")
                     }
-                    .disabled(appState.shortcuts.count >= ShortcutKey.allCases.count)
+                    .disabled(!viewModel.canAddShortcut)
                     .help("Add shortcut")
                 }
             } footer: {

@@ -3,58 +3,37 @@ import XCTest
 
 @MainActor
 final class PasteRuntimeTests: XCTestCase {
-    private let defaultsKeys = [
-        "VibeScribe.ApiKey",
-        "VibeScribe.DeepgramLanguage",
-        "VibeScribe.HistoryLimit",
-        "VibeScribe.Shortcuts",
-        "VibeScribe.OpenRouterApiKey",
-        "VibeScribe.OpenRouterModel",
-        "VibeScribe.Prompts",
-        "VibeScribe.EnhancementPrompts",
-        "VibeScribe.EscToCancelRecording",
-        "VibeScribe.PlaySoundEffects",
-        "VibeScribe.MuteMediaDuringRecording",
-        "VibeScribe.RestoreClipboardAfterPaste",
-        "VibeScribe.OverlayPosition"
-    ]
-
-    override func setUp() {
-        super.setUp()
-        for key in defaultsKeys {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
-    }
-
-    override func tearDown() {
-        for key in defaultsKeys {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
-        super.tearDown()
-    }
-
     func testPasteKeepsClipboardByDefaultAfterAutoPaste() async {
-        let appState = AppState()
-        appState.historyLimit = .ten
-        appState.finalTranscript = "hello world"
-
         let clock = ManualClock()
         let scheduler = ManualScheduler(clock: clock)
         let pasteboard = FakePasteboardPort()
         pasteboard.currentSnapshot = PasteboardSnapshotPayload(
             items: [["public.utf8-plain-text": Data("old".utf8)]]
         )
-        let sound = FakeSoundPort()
 
         let runtime = PasteRuntime(
-            appState: appState,
             pasteboard: pasteboard,
-            soundPort: sound,
             scheduler: scheduler,
             enhancer: { _, _, _, _ in "" }
         )
 
-        await runtime.pasteFinalTranscript(enhancementPrompt: nil, transcriptionError: nil)
+        var events: [PasteRuntimeEvent] = []
+        runtime.onEvent = { events.append($0) }
+
+        await runtime.process(
+            session: FinalizedTranscriptSession(
+                finalTranscript: "hello world",
+                lastTranscript: "",
+                enhancementPrompt: nil,
+                transcriptionError: nil
+            ),
+            settings: PasteRuntimeSettings(
+                openRouterApiKey: "",
+                openRouterModel: "",
+                playSoundEffects: false,
+                restoreClipboardAfterPaste: false
+            )
+        )
 
         XCTAssertEqual(pasteboard.writtenStrings.last, "hello world")
         XCTAssertEqual(pasteboard.sendPasteCommandCallCount, 1)
@@ -62,32 +41,37 @@ final class PasteRuntimeTests: XCTestCase {
 
         scheduler.advance(by: 0.2)
         XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
-        XCTAssertEqual(appState.appStatus, .idle)
+        XCTAssertTrue(events.contains(where: matchesIdleStatus))
     }
 
     func testPasteCanRestoreClipboardAfterAutoPasteWhenEnabled() async {
-        let appState = AppState()
-        appState.historyLimit = .ten
-        appState.finalTranscript = "hello world"
-
         let clock = ManualClock()
         let scheduler = ManualScheduler(clock: clock)
         let pasteboard = FakePasteboardPort()
         pasteboard.currentSnapshot = PasteboardSnapshotPayload(
             items: [["public.utf8-plain-text": Data("old".utf8)]]
         )
-        let sound = FakeSoundPort()
 
         let runtime = PasteRuntime(
-            appState: appState,
             pasteboard: pasteboard,
-            soundPort: sound,
             scheduler: scheduler,
-            enhancer: { _, _, _, _ in "" },
-            restoreClipboardAfterPaste: { true }
+            enhancer: { _, _, _, _ in "" }
         )
 
-        await runtime.pasteFinalTranscript(enhancementPrompt: nil, transcriptionError: nil)
+        await runtime.process(
+            session: FinalizedTranscriptSession(
+                finalTranscript: "hello world",
+                lastTranscript: "",
+                enhancementPrompt: nil,
+                transcriptionError: nil
+            ),
+            settings: PasteRuntimeSettings(
+                openRouterApiKey: "",
+                openRouterModel: "",
+                playSoundEffects: false,
+                restoreClipboardAfterPaste: true
+            )
+        )
 
         XCTAssertEqual(pasteboard.writtenStrings.last, "hello world")
         XCTAssertEqual(pasteboard.sendPasteCommandCallCount, 1)
@@ -99,14 +83,9 @@ final class PasteRuntimeTests: XCTestCase {
     }
 
     func testOverlayHidesAfterPasteCommandAttempt() async {
-        let appState = AppState()
-        appState.historyLimit = .ten
-        appState.finalTranscript = "hello world"
-
         let clock = ManualClock()
         let scheduler = ManualScheduler(clock: clock)
         let pasteboard = FakePasteboardPort()
-        let sound = FakeSoundPort()
         var events: [String] = []
 
         pasteboard.onWriteString = { _ in
@@ -117,44 +96,40 @@ final class PasteRuntimeTests: XCTestCase {
         }
 
         let runtime = PasteRuntime(
-            appState: appState,
             pasteboard: pasteboard,
-            soundPort: sound,
             scheduler: scheduler,
             enhancer: { _, _, _, _ in "" }
         )
-        runtime.onHideOverlay = {
-            events.append("hide")
+        runtime.onEvent = { event in
+            if case .hideOverlay = event {
+                events.append("hide")
+            }
         }
 
-        await runtime.pasteFinalTranscript(enhancementPrompt: nil, transcriptionError: nil)
+        await runtime.process(
+            session: FinalizedTranscriptSession(
+                finalTranscript: "hello world",
+                lastTranscript: "",
+                enhancementPrompt: nil,
+                transcriptionError: nil
+            ),
+            settings: PasteRuntimeSettings(
+                openRouterApiKey: "",
+                openRouterModel: "",
+                playSoundEffects: false,
+                restoreClipboardAfterPaste: false
+            )
+        )
 
         XCTAssertEqual(events, ["write", "paste", "hide"])
     }
 
     func testEnhancementMissingCredentialsFallsBackToOriginalAndRecordsError() async {
-        let appState = AppState()
-        appState.historyLimit = .ten
-        appState.finalTranscript = "raw transcript"
-        appState.openRouterApiKey = ""
-        appState.openRouterModel = ""
-
-        let prompt = PromptConfig(id: UUID(), name: "Clean", content: "clean this")
-        appState.prompts = [prompt]
-        var shortcuts = appState.shortcuts
-        shortcuts[0].promptID = prompt.id
-        appState.shortcuts = shortcuts
-        XCTAssertNotNil(appState.promptContent(forShortcutID: appState.shortcuts[0].id))
-
         let clock = ManualClock()
         let scheduler = ManualScheduler(clock: clock)
         let pasteboard = FakePasteboardPort()
-        let sound = FakeSoundPort()
-
         let runtime = PasteRuntime(
-            appState: appState,
             pasteboard: pasteboard,
-            soundPort: sound,
             scheduler: scheduler,
             enhancer: { _, _, _, _ in
                 XCTFail("Enhancer should not be called when credentials are missing")
@@ -162,60 +137,75 @@ final class PasteRuntimeTests: XCTestCase {
             }
         )
 
-        await runtime.pasteFinalTranscript(
-            enhancementPrompt: EnhancementPromptContext(
-                name: "Clean",
-                content: "clean this",
-                isForActiveApp: false
+        var emittedEvents: [PasteRuntimeEvent] = []
+        runtime.onEvent = { emittedEvents.append($0) }
+
+        await runtime.process(
+            session: FinalizedTranscriptSession(
+                finalTranscript: "raw transcript",
+                lastTranscript: "",
+                enhancementPrompt: EnhancementPromptContext(
+                    name: "Clean",
+                    content: "clean this",
+                    isForActiveApp: false
+                ),
+                transcriptionError: nil
             ),
-            transcriptionError: nil
+            settings: PasteRuntimeSettings(
+                openRouterApiKey: "",
+                openRouterModel: "",
+                playSoundEffects: false,
+                restoreClipboardAfterPaste: false
+            )
         )
 
         XCTAssertEqual(pasteboard.writtenStrings.last, "raw transcript")
-        XCTAssertEqual(appState.transcriptHistory.first?.enhancementError, "OpenRouter API key is not set.")
-        XCTAssertEqual(appState.transcriptHistory.first?.promptName, "Clean")
-        XCTAssertEqual(appState.transcriptHistory.first?.usedActiveAppPrompt, false)
-        XCTAssertEqual(appState.appStatus, .idle)
+
+        let historyEntry = emittedEvents.compactMap(historyEntry).first
+        XCTAssertEqual(historyEntry?.enhancementError, "OpenRouter API key is not set.")
+        XCTAssertEqual(historyEntry?.promptName, "Clean")
+        XCTAssertEqual(historyEntry?.usedActiveAppPrompt, false)
+        XCTAssertTrue(emittedEvents.contains(where: matchesIdleStatus))
     }
 
     func testEnhancementHistoryStoresActiveAppPromptMetadata() async {
-        let appState = AppState()
-        appState.historyLimit = .ten
-        appState.finalTranscript = "raw transcript"
-        appState.openRouterApiKey = "sk-test"
-        appState.openRouterModel = "openai/gpt-4o-mini"
-
         let clock = ManualClock()
         let scheduler = ManualScheduler(clock: clock)
         let pasteboard = FakePasteboardPort()
-        let sound = FakeSoundPort()
-
         let runtime = PasteRuntime(
-            appState: appState,
             pasteboard: pasteboard,
-            soundPort: sound,
             scheduler: scheduler,
             enhancer: { transcript, _, _, _ in transcript.uppercased() }
         )
 
-        await runtime.pasteFinalTranscript(
-            enhancementPrompt: EnhancementPromptContext(
-                name: "Slack tidy",
-                content: "clean this",
-                isForActiveApp: true
+        var emittedEvents: [PasteRuntimeEvent] = []
+        runtime.onEvent = { emittedEvents.append($0) }
+
+        await runtime.process(
+            session: FinalizedTranscriptSession(
+                finalTranscript: "raw transcript",
+                lastTranscript: "",
+                enhancementPrompt: EnhancementPromptContext(
+                    name: "Slack tidy",
+                    content: "clean this",
+                    isForActiveApp: true
+                ),
+                transcriptionError: nil
             ),
-            transcriptionError: nil
+            settings: PasteRuntimeSettings(
+                openRouterApiKey: "sk-test",
+                openRouterModel: "openai/gpt-4o-mini",
+                playSoundEffects: false,
+                restoreClipboardAfterPaste: false
+            )
         )
 
-        XCTAssertEqual(appState.transcriptHistory.first?.promptName, "Slack tidy")
-        XCTAssertEqual(appState.transcriptHistory.first?.usedActiveAppPrompt, true)
+        let historyEntry = emittedEvents.compactMap(historyEntry).first
+        XCTAssertEqual(historyEntry?.promptName, "Slack tidy")
+        XCTAssertEqual(historyEntry?.usedActiveAppPrompt, true)
     }
 
     func testPasteCommandFailureKeepsClipboardByDefault() async {
-        let appState = AppState()
-        appState.historyLimit = .ten
-        appState.finalTranscript = "hello world"
-
         let clock = ManualClock()
         let scheduler = ManualScheduler(clock: clock)
         let pasteboard = FakePasteboardPort()
@@ -223,17 +213,27 @@ final class PasteRuntimeTests: XCTestCase {
             items: [["public.utf8-plain-text": Data("old".utf8)]]
         )
         pasteboard.sendPasteCommandResult = false
-        let sound = FakeSoundPort()
 
         let runtime = PasteRuntime(
-            appState: appState,
             pasteboard: pasteboard,
-            soundPort: sound,
             scheduler: scheduler,
             enhancer: { _, _, _, _ in "" }
         )
 
-        await runtime.pasteFinalTranscript(enhancementPrompt: nil, transcriptionError: nil)
+        await runtime.process(
+            session: FinalizedTranscriptSession(
+                finalTranscript: "hello world",
+                lastTranscript: "",
+                enhancementPrompt: nil,
+                transcriptionError: nil
+            ),
+            settings: PasteRuntimeSettings(
+                openRouterApiKey: "",
+                openRouterModel: "",
+                playSoundEffects: false,
+                restoreClipboardAfterPaste: false
+            )
+        )
 
         XCTAssertEqual(pasteboard.writtenStrings.last, "hello world")
         XCTAssertEqual(pasteboard.sendPasteCommandCallCount, 1)
@@ -241,10 +241,6 @@ final class PasteRuntimeTests: XCTestCase {
     }
 
     func testPasteCommandFailureDoesNotRestoreClipboardEvenWhenEnabled() async {
-        let appState = AppState()
-        appState.historyLimit = .ten
-        appState.finalTranscript = "hello world"
-
         let clock = ManualClock()
         let scheduler = ManualScheduler(clock: clock)
         let pasteboard = FakePasteboardPort()
@@ -252,18 +248,27 @@ final class PasteRuntimeTests: XCTestCase {
             items: [["public.utf8-plain-text": Data("old".utf8)]]
         )
         pasteboard.sendPasteCommandResult = false
-        let sound = FakeSoundPort()
 
         let runtime = PasteRuntime(
-            appState: appState,
             pasteboard: pasteboard,
-            soundPort: sound,
             scheduler: scheduler,
-            enhancer: { _, _, _, _ in "" },
-            restoreClipboardAfterPaste: { true }
+            enhancer: { _, _, _, _ in "" }
         )
 
-        await runtime.pasteFinalTranscript(enhancementPrompt: nil, transcriptionError: nil)
+        await runtime.process(
+            session: FinalizedTranscriptSession(
+                finalTranscript: "hello world",
+                lastTranscript: "",
+                enhancementPrompt: nil,
+                transcriptionError: nil
+            ),
+            settings: PasteRuntimeSettings(
+                openRouterApiKey: "",
+                openRouterModel: "",
+                playSoundEffects: false,
+                restoreClipboardAfterPaste: true
+            )
+        )
 
         XCTAssertEqual(pasteboard.writtenStrings.last, "hello world")
         XCTAssertEqual(pasteboard.sendPasteCommandCallCount, 1)
@@ -271,5 +276,19 @@ final class PasteRuntimeTests: XCTestCase {
 
         scheduler.advance(by: 0.2)
         XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
+    }
+
+    private func historyEntry(from event: PasteRuntimeEvent) -> TranscriptHistoryEntry? {
+        if case .historyEntry(let entry) = event {
+            return entry
+        }
+        return nil
+    }
+
+    private func matchesIdleStatus(_ event: PasteRuntimeEvent) -> Bool {
+        if case .status(.idle) = event {
+            return true
+        }
+        return false
     }
 }

@@ -4,17 +4,46 @@ import SwiftUI
 
 @MainActor
 final class MainWindowController: NSObject, NSWindowDelegate {
-    private let appState: AppState
+    private let mainViewModel: MainViewModel
+    private let generalViewModel: GeneralSettingsViewModel
+    private let shortcutsViewModel: ShortcutsSettingsViewModel
+    private let enhancementsViewModel: EnhancementsSettingsViewModel
+    private let historyViewModel: HistoryViewModel
+    private let logsViewModel: LogsViewModel
     private var window: NSWindow?
     private var tabSubscription: AnyCancellable?
 
-    init(appState: AppState) {
-        self.appState = appState
+    init(
+        mainViewModel: MainViewModel,
+        settingsStore: SettingsStore,
+        sessionState: SessionState,
+        permissionService: PermissionService,
+        promptRoutingService: PromptRoutingService
+    ) {
+        self.mainViewModel = mainViewModel
+        self.generalViewModel = GeneralSettingsViewModel(
+            settingsStore: settingsStore,
+            permissionService: permissionService
+        )
+        self.shortcutsViewModel = ShortcutsSettingsViewModel(settingsStore: settingsStore)
+        self.enhancementsViewModel = EnhancementsSettingsViewModel(
+            settingsStore: settingsStore,
+            promptRoutingService: promptRoutingService
+        )
+        self.historyViewModel = HistoryViewModel(sessionState: sessionState)
+        self.logsViewModel = LogsViewModel(sessionState: sessionState)
     }
 
     func show() {
         if window == nil {
-            let rootView = MainView(appState: appState)
+            let rootView = MainView(
+                mainViewModel: mainViewModel,
+                generalViewModel: generalViewModel,
+                shortcutsViewModel: shortcutsViewModel,
+                enhancementsViewModel: enhancementsViewModel,
+                historyViewModel: historyViewModel,
+                logsViewModel: logsViewModel
+            )
             let hosting = NSHostingController(rootView: rootView)
 
             let window = NSWindow(
@@ -33,13 +62,13 @@ final class MainWindowController: NSObject, NSWindowDelegate {
             let toolbar = NSToolbar(identifier: "SettingsToolbar")
             toolbar.delegate = self
             toolbar.displayMode = .iconAndLabel
-            toolbar.selectedItemIdentifier = appState.selectedTab.toolbarIdentifier
+            toolbar.selectedItemIdentifier = mainViewModel.selectedTab.toolbarIdentifier
             window.toolbar = toolbar
             window.toolbarStyle = .preference
 
             self.window = window
 
-            tabSubscription = appState.$selectedTab.sink { [weak toolbar] tab in
+            tabSubscription = mainViewModel.$selectedTab.sink { [weak toolbar] tab in
                 toolbar?.selectedItemIdentifier = tab.toolbarIdentifier
             }
         }
@@ -55,7 +84,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
 
     @objc private func toolbarItemClicked(_ sender: NSToolbarItem) {
         guard let tab = SettingsTab(rawValue: sender.itemIdentifier.rawValue) else { return }
-        appState.selectedTab = tab
+        mainViewModel.selectedTab = tab
     }
 }
 

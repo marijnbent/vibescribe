@@ -3,13 +3,15 @@ import SwiftUI
 
 @MainActor
 final class OverlayWindowController {
-    private let appState: AppState
+    private let sessionState: SessionState
+    private let settingsStore: SettingsStore
     private var panel: NSPanel?
     private var isShowing = false
     private var animationID = UUID()
 
-    init(appState: AppState) {
-        self.appState = appState
+    init(sessionState: SessionState, settingsStore: SettingsStore) {
+        self.sessionState = sessionState
+        self.settingsStore = settingsStore
     }
 
     func show() {
@@ -18,7 +20,7 @@ final class OverlayWindowController {
         }
         guard let panel else { return }
         guard let screen = NSScreen.main else {
-            appState.overlayPulseID = UUID()
+            sessionState.overlayPulseID = UUID()
             isShowing = true
             animationID = UUID()
             panel.orderFrontRegardless()
@@ -38,7 +40,7 @@ final class OverlayWindowController {
             return
         }
 
-        appState.overlayPulseID = UUID()
+        sessionState.overlayPulseID = UUID()
         isShowing = true
         animationID = UUID()
 
@@ -85,7 +87,7 @@ final class OverlayWindowController {
     }
 
     private func makePanel() -> NSPanel {
-        let overlayView = OverlayView(appState: appState)
+        let overlayView = OverlayView(sessionState: sessionState)
         let hosting = NSHostingController(rootView: overlayView)
 
         let panel = NSPanel(
@@ -121,7 +123,7 @@ final class OverlayWindowController {
         let height: CGFloat = 32
         let x = fullFrame.midX - width / 2
         let y: CGFloat
-        switch appState.overlayPosition {
+        switch settingsStore.overlayPosition {
         case .top:
             y = visibleFrame.maxY - height - 28
         case .bottom:
@@ -131,7 +133,7 @@ final class OverlayWindowController {
     }
 
     private var overlayWidth: CGFloat {
-        appState.overlayAppIcon == nil ? 90 : 116
+        sessionState.overlayAppIcon == nil ? 90 : 116
     }
 
     private func offscreenFrame(screen: NSScreen, width: CGFloat, height: CGFloat) -> CGRect {
@@ -139,7 +141,7 @@ final class OverlayWindowController {
         let visibleFrame = screen.visibleFrame
         let x = fullFrame.midX - width / 2
         let y: CGFloat
-        switch appState.overlayPosition {
+        switch settingsStore.overlayPosition {
         case .top:
             y = visibleFrame.maxY + 8
         case .bottom:
