@@ -26,6 +26,7 @@ final class RuntimeCoordinator {
         clockPort: ClockPort,
         soundPort: SoundPort,
         pasteboardPort: PasteboardPort,
+        pasteVerificationPort: PasteVerificationPort,
         audioCapturePort: AudioCapturePort,
         deepgramPort: DeepgramPort,
         eventMonitorPort: EventMonitorPort,
@@ -42,6 +43,7 @@ final class RuntimeCoordinator {
 
         self.pasteRuntime = PasteRuntime(
             pasteboard: pasteboardPort,
+            pasteVerification: pasteVerificationPort,
             scheduler: schedulerPort,
             enhancer: { transcript, prompt, apiKey, model in
                 try await OpenRouterClient.enhance(

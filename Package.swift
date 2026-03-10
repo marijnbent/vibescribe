@@ -10,7 +10,10 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "VibeScribeCore"
+            name: "VibeScribeCore",
+            resources: [
+                .process("Resources"),
+            ]
         ),
         .executableTarget(
             name: "VibeScribe",

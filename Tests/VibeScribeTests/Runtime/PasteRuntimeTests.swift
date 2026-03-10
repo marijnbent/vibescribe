@@ -10,9 +10,11 @@ final class PasteRuntimeTests: XCTestCase {
         pasteboard.currentSnapshot = PasteboardSnapshotPayload(
             items: [["public.utf8-plain-text": Data("old".utf8)]]
         )
+        let pasteVerification = FakePasteVerificationPort()
 
         let runtime = PasteRuntime(
             pasteboard: pasteboard,
+            pasteVerification: pasteVerification,
             scheduler: scheduler,
             enhancer: { _, _, _, _ in "" }
         )
@@ -38,22 +40,28 @@ final class PasteRuntimeTests: XCTestCase {
         XCTAssertEqual(pasteboard.writtenStrings.last, "hello world")
         XCTAssertEqual(pasteboard.sendPasteCommandCallCount, 1)
         XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
+        XCTAssertEqual(pasteVerification.prepareCallCount, 0)
+        XCTAssertEqual(pasteVerification.checkCallCount, 0)
 
-        scheduler.advance(by: 0.2)
+        scheduler.advance(by: 0.5)
         XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
         XCTAssertTrue(events.contains(where: matchesIdleStatus))
     }
 
-    func testPasteCanRestoreClipboardAfterAutoPasteWhenEnabled() async {
+    func testPasteRestoresClipboardOnlyAfterConfirmedAutoPaste() async {
         let clock = ManualClock()
         let scheduler = ManualScheduler(clock: clock)
         let pasteboard = FakePasteboardPort()
         pasteboard.currentSnapshot = PasteboardSnapshotPayload(
             items: [["public.utf8-plain-text": Data("old".utf8)]]
         )
+        let pasteVerification = FakePasteVerificationPort()
+        pasteVerification.prepareResult = makePreparedPasteVerification(expectedText: "hello world")
+        pasteVerification.checkResults = [.pending, .confirmed]
 
         let runtime = PasteRuntime(
             pasteboard: pasteboard,
+            pasteVerification: pasteVerification,
             scheduler: scheduler,
             enhancer: { _, _, _, _ in "" }
         )
@@ -76,16 +84,24 @@ final class PasteRuntimeTests: XCTestCase {
         XCTAssertEqual(pasteboard.writtenStrings.last, "hello world")
         XCTAssertEqual(pasteboard.sendPasteCommandCallCount, 1)
         XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
+        XCTAssertEqual(pasteVerification.prepareCallCount, 1)
+        XCTAssertEqual(pasteVerification.checkCallCount, 0)
 
-        scheduler.advance(by: 0.2)
+        scheduler.advance(by: 0.051)
+        XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
+        XCTAssertEqual(pasteVerification.checkCallCount, 1)
+
+        scheduler.advance(by: 0.051)
         XCTAssertEqual(pasteboard.restoredSnapshots.count, 1)
         XCTAssertEqual(pasteboard.restoredSnapshots[0], pasteboard.currentSnapshot)
+        XCTAssertEqual(pasteVerification.checkCallCount, 2)
     }
 
     func testOverlayHidesAfterPasteCommandAttempt() async {
         let clock = ManualClock()
         let scheduler = ManualScheduler(clock: clock)
         let pasteboard = FakePasteboardPort()
+        let pasteVerification = FakePasteVerificationPort()
         var events: [String] = []
 
         pasteboard.onWriteString = { _ in
@@ -97,6 +113,7 @@ final class PasteRuntimeTests: XCTestCase {
 
         let runtime = PasteRuntime(
             pasteboard: pasteboard,
+            pasteVerification: pasteVerification,
             scheduler: scheduler,
             enhancer: { _, _, _, _ in "" }
         )
@@ -128,8 +145,10 @@ final class PasteRuntimeTests: XCTestCase {
         let clock = ManualClock()
         let scheduler = ManualScheduler(clock: clock)
         let pasteboard = FakePasteboardPort()
+        let pasteVerification = FakePasteVerificationPort()
         let runtime = PasteRuntime(
             pasteboard: pasteboard,
+            pasteVerification: pasteVerification,
             scheduler: scheduler,
             enhancer: { _, _, _, _ in
                 XCTFail("Enhancer should not be called when credentials are missing")
@@ -172,8 +191,10 @@ final class PasteRuntimeTests: XCTestCase {
         let clock = ManualClock()
         let scheduler = ManualScheduler(clock: clock)
         let pasteboard = FakePasteboardPort()
+        let pasteVerification = FakePasteVerificationPort()
         let runtime = PasteRuntime(
             pasteboard: pasteboard,
+            pasteVerification: pasteVerification,
             scheduler: scheduler,
             enhancer: { transcript, _, _, _ in transcript.uppercased() }
         )
@@ -205,6 +226,138 @@ final class PasteRuntimeTests: XCTestCase {
         XCTAssertEqual(historyEntry?.usedActiveAppPrompt, true)
     }
 
+    func testRestoreEnabledKeepsClipboardWhenVerificationCannotPrepare() async {
+        let clock = ManualClock()
+        let scheduler = ManualScheduler(clock: clock)
+        let pasteboard = FakePasteboardPort()
+        pasteboard.currentSnapshot = PasteboardSnapshotPayload(
+            items: [["public.utf8-plain-text": Data("old".utf8)]]
+        )
+        let pasteVerification = FakePasteVerificationPort()
+
+        let runtime = PasteRuntime(
+            pasteboard: pasteboard,
+            pasteVerification: pasteVerification,
+            scheduler: scheduler,
+            enhancer: { _, _, _, _ in "" }
+        )
+
+        var emittedEvents: [PasteRuntimeEvent] = []
+        runtime.onEvent = { emittedEvents.append($0) }
+
+        await runtime.process(
+            session: FinalizedTranscriptSession(
+                finalTranscript: "hello world",
+                lastTranscript: "",
+                enhancementPrompt: nil,
+                transcriptionError: nil
+            ),
+            settings: PasteRuntimeSettings(
+                openRouterApiKey: "",
+                openRouterModel: "",
+                playSoundEffects: false,
+                restoreClipboardAfterPaste: true
+            )
+        )
+
+        XCTAssertEqual(pasteVerification.prepareCallCount, 1)
+        XCTAssertEqual(pasteVerification.checkCallCount, 0)
+        XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
+        XCTAssertTrue(emittedEvents.contains(where: matchesClipboardKeptLog))
+
+        scheduler.advance(by: 0.5)
+        XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
+    }
+
+    func testRestoreEnabledKeepsClipboardWhenVerificationMismatches() async {
+        let clock = ManualClock()
+        let scheduler = ManualScheduler(clock: clock)
+        let pasteboard = FakePasteboardPort()
+        pasteboard.currentSnapshot = PasteboardSnapshotPayload(
+            items: [["public.utf8-plain-text": Data("old".utf8)]]
+        )
+        let pasteVerification = FakePasteVerificationPort()
+        pasteVerification.prepareResult = makePreparedPasteVerification(expectedText: "hello world")
+        pasteVerification.checkResults = [.unconfirmed(.mismatch)]
+
+        let runtime = PasteRuntime(
+            pasteboard: pasteboard,
+            pasteVerification: pasteVerification,
+            scheduler: scheduler,
+            enhancer: { _, _, _, _ in "" }
+        )
+
+        var emittedEvents: [PasteRuntimeEvent] = []
+        runtime.onEvent = { emittedEvents.append($0) }
+
+        await runtime.process(
+            session: FinalizedTranscriptSession(
+                finalTranscript: "hello world",
+                lastTranscript: "",
+                enhancementPrompt: nil,
+                transcriptionError: nil
+            ),
+            settings: PasteRuntimeSettings(
+                openRouterApiKey: "",
+                openRouterModel: "",
+                playSoundEffects: false,
+                restoreClipboardAfterPaste: true
+            )
+        )
+
+        scheduler.advance(by: 0.051)
+
+        XCTAssertEqual(pasteVerification.prepareCallCount, 1)
+        XCTAssertEqual(pasteVerification.checkCallCount, 1)
+        XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
+        XCTAssertTrue(emittedEvents.contains(where: matchesClipboardKeptLog))
+    }
+
+    func testRestoreEnabledKeepsClipboardWhenVerificationTimesOut() async {
+        let clock = ManualClock()
+        let scheduler = ManualScheduler(clock: clock)
+        let pasteboard = FakePasteboardPort()
+        pasteboard.currentSnapshot = PasteboardSnapshotPayload(
+            items: [["public.utf8-plain-text": Data("old".utf8)]]
+        )
+        let pasteVerification = FakePasteVerificationPort()
+        pasteVerification.prepareResult = makePreparedPasteVerification(expectedText: "hello world")
+
+        let runtime = PasteRuntime(
+            pasteboard: pasteboard,
+            pasteVerification: pasteVerification,
+            scheduler: scheduler,
+            enhancer: { _, _, _, _ in "" }
+        )
+
+        var emittedEvents: [PasteRuntimeEvent] = []
+        runtime.onEvent = { emittedEvents.append($0) }
+
+        await runtime.process(
+            session: FinalizedTranscriptSession(
+                finalTranscript: "hello world",
+                lastTranscript: "",
+                enhancementPrompt: nil,
+                transcriptionError: nil
+            ),
+            settings: PasteRuntimeSettings(
+                openRouterApiKey: "",
+                openRouterModel: "",
+                playSoundEffects: false,
+                restoreClipboardAfterPaste: true
+            )
+        )
+
+        for _ in 0..<7 {
+            scheduler.advance(by: 0.051)
+        }
+
+        XCTAssertEqual(pasteVerification.prepareCallCount, 1)
+        XCTAssertEqual(pasteVerification.checkCallCount, 7)
+        XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
+        XCTAssertTrue(emittedEvents.contains(where: matchesClipboardKeptLog))
+    }
+
     func testPasteCommandFailureKeepsClipboardByDefault() async {
         let clock = ManualClock()
         let scheduler = ManualScheduler(clock: clock)
@@ -213,9 +366,11 @@ final class PasteRuntimeTests: XCTestCase {
             items: [["public.utf8-plain-text": Data("old".utf8)]]
         )
         pasteboard.sendPasteCommandResult = false
+        let pasteVerification = FakePasteVerificationPort()
 
         let runtime = PasteRuntime(
             pasteboard: pasteboard,
+            pasteVerification: pasteVerification,
             scheduler: scheduler,
             enhancer: { _, _, _, _ in "" }
         )
@@ -238,6 +393,8 @@ final class PasteRuntimeTests: XCTestCase {
         XCTAssertEqual(pasteboard.writtenStrings.last, "hello world")
         XCTAssertEqual(pasteboard.sendPasteCommandCallCount, 1)
         XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
+        XCTAssertEqual(pasteVerification.prepareCallCount, 0)
+        XCTAssertEqual(pasteVerification.checkCallCount, 0)
     }
 
     func testPasteCommandFailureDoesNotRestoreClipboardEvenWhenEnabled() async {
@@ -248,9 +405,12 @@ final class PasteRuntimeTests: XCTestCase {
             items: [["public.utf8-plain-text": Data("old".utf8)]]
         )
         pasteboard.sendPasteCommandResult = false
+        let pasteVerification = FakePasteVerificationPort()
+        pasteVerification.prepareResult = makePreparedPasteVerification(expectedText: "hello world")
 
         let runtime = PasteRuntime(
             pasteboard: pasteboard,
+            pasteVerification: pasteVerification,
             scheduler: scheduler,
             enhancer: { _, _, _, _ in "" }
         )
@@ -273,8 +433,10 @@ final class PasteRuntimeTests: XCTestCase {
         XCTAssertEqual(pasteboard.writtenStrings.last, "hello world")
         XCTAssertEqual(pasteboard.sendPasteCommandCallCount, 1)
         XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
+        XCTAssertEqual(pasteVerification.prepareCallCount, 1)
+        XCTAssertEqual(pasteVerification.checkCallCount, 0)
 
-        scheduler.advance(by: 0.2)
+        scheduler.advance(by: 0.5)
         XCTAssertTrue(pasteboard.restoredSnapshots.isEmpty)
     }
 
@@ -287,6 +449,13 @@ final class PasteRuntimeTests: XCTestCase {
 
     private func matchesIdleStatus(_ event: PasteRuntimeEvent) -> Bool {
         if case .status(.idle) = event {
+            return true
+        }
+        return false
+    }
+
+    private func matchesClipboardKeptLog(_ event: PasteRuntimeEvent) -> Bool {
+        if case .log("Could not confirm auto-paste. Kept transcript on the clipboard.", .warning) = event {
             return true
         }
         return false

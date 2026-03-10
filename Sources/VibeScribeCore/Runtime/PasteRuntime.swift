@@ -32,22 +32,28 @@ final class PasteRuntime {
     typealias Enhancer = @Sendable (_ transcript: String, _ prompt: String, _ apiKey: String, _ model: String) async throws -> String
 
     private let pasteboard: PasteboardPort
+    private let pasteVerification: PasteVerificationPort
     private let scheduler: SchedulerPort
     private let enhancer: Enhancer
-    private let clipboardRestoreDelay: TimeInterval
+    private let pasteVerificationPollInterval: TimeInterval
+    private let pasteVerificationTimeout: TimeInterval
 
     var onEvent: ((PasteRuntimeEvent) -> Void)?
 
     init(
         pasteboard: PasteboardPort,
+        pasteVerification: PasteVerificationPort,
         scheduler: SchedulerPort,
         enhancer: @escaping Enhancer,
-        clipboardRestoreDelay: TimeInterval = 0.2
+        pasteVerificationPollInterval: TimeInterval = 0.05,
+        pasteVerificationTimeout: TimeInterval = 0.35
     ) {
         self.pasteboard = pasteboard
+        self.pasteVerification = pasteVerification
         self.scheduler = scheduler
         self.enhancer = enhancer
-        self.clipboardRestoreDelay = clipboardRestoreDelay
+        self.pasteVerificationPollInterval = pasteVerificationPollInterval
+        self.pasteVerificationTimeout = pasteVerificationTimeout
     }
 
     func process(session: FinalizedTranscriptSession, settings: PasteRuntimeSettings) async {
@@ -130,6 +136,9 @@ final class PasteRuntime {
 
         let textToPaste = enhancedText ?? rawText
         let snapshot = settings.restoreClipboardAfterPaste ? pasteboard.snapshot() : nil
+        let preparedVerification = settings.restoreClipboardAfterPaste
+            ? pasteVerification.prepare(expectedText: textToPaste)
+            : nil
         pasteboard.writeString(textToPaste)
 
         emit(.historyEntry(
@@ -176,12 +185,69 @@ final class PasteRuntime {
         }
 
         guard settings.restoreClipboardAfterPaste, let snapshot else { return }
-        _ = scheduler.schedule(after: clipboardRestoreDelay) { [weak self] in
-            self?.pasteboard.restore(snapshot)
+        guard let preparedVerification else {
+            emit(.log("Could not confirm auto-paste. Kept transcript on the clipboard.", .warning))
+            return
         }
+
+        schedulePasteVerification(
+            preparedVerification,
+            snapshot: snapshot,
+            remainingAttempts: verificationAttemptCount
+        )
     }
 
     private func emit(_ event: PasteRuntimeEvent) {
         onEvent?(event)
+    }
+
+    private var verificationAttemptCount: Int {
+        max(1, Int(ceil(pasteVerificationTimeout / pasteVerificationPollInterval)))
+    }
+
+    private func schedulePasteVerification(
+        _ verification: PreparedPasteVerification,
+        snapshot: PasteboardSnapshotPayload,
+        remainingAttempts: Int
+    ) {
+        _ = scheduler.schedule(after: pasteVerificationPollInterval) { [weak self] in
+            self?.performPasteVerification(
+                verification,
+                snapshot: snapshot,
+                remainingAttempts: remainingAttempts
+            )
+        }
+    }
+
+    private func performPasteVerification(
+        _ verification: PreparedPasteVerification,
+        snapshot: PasteboardSnapshotPayload,
+        remainingAttempts: Int
+    ) {
+        switch pasteVerification.check(verification) {
+        case .confirmed:
+            pasteboard.restore(snapshot)
+            emit(.log("Auto-paste confirmed. Restored previous clipboard.", .info))
+        case .pending:
+            guard remainingAttempts > 1 else {
+                handlePasteVerificationFailure(.timedOut)
+                return
+            }
+            schedulePasteVerification(
+                verification,
+                snapshot: snapshot,
+                remainingAttempts: remainingAttempts - 1
+            )
+        case .unconfirmed(let reason):
+            handlePasteVerificationFailure(reason)
+        }
+    }
+
+    private func handlePasteVerificationFailure(_ reason: PasteVerificationFailureReason) {
+        guard reason != .timedOut else {
+            emit(.log("Could not confirm auto-paste. Kept transcript on the clipboard.", .warning))
+            return
+        }
+        emit(.log("Could not confirm auto-paste. Kept transcript on the clipboard.", .warning))
     }
 }

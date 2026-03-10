@@ -25,12 +25,18 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private let clockPort: ClockPort = SystemClockAdapter()
     private let soundPort: SoundPort = NSSoundAdapter()
     private let pasteboardPort: PasteboardPort = NSPasteboardAdapter()
+    private let pasteVerificationPort: PasteVerificationPort = AccessibilityPasteVerificationAdapter()
     private let audioCapturePort: AudioCapturePort = AudioCaptureControllerAdapter()
     private let deepgramPort: DeepgramPort = DeepgramClientAdapter()
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = AppMenuBuilder.build()
+
+        if let url = Bundle.module.url(forResource: "AppIcon", withExtension: "icns"),
+           let icon = NSImage(contentsOf: url) {
+            NSApp.applicationIconImage = icon
+        }
 
         configureState()
         configureWindows()
@@ -93,6 +99,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
             clockPort: clockPort,
             soundPort: soundPort,
             pasteboardPort: pasteboardPort,
+            pasteVerificationPort: pasteVerificationPort,
             audioCapturePort: audioCapturePort,
             deepgramPort: deepgramPort,
             eventMonitorPort: eventMonitorPort,
@@ -108,6 +115,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
 
     private func configureMenuBar() {
         menuBarController = MenuBarController(
+            settingsStore: settingsStore,
             onOpenMain: { [weak self] in
                 self?.windowCoordinator.showMain(tab: .general)
             },

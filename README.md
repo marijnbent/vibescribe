@@ -10,7 +10,7 @@ VibeScribe is a macOS menu bar dictation app built in Swift. Hold or tap a confi
 
 - Streams microphone audio to Deepgram over WebSocket and shows live transcription state while you speak
 - Supports multiple configurable global shortcuts with `Hold`, `Click`, and `Both` activation modes
-- Auto-pastes the transcript into the frontmost app and can restore the previous clipboard afterward
+- Auto-pastes the transcript into the frontmost app and restores the previous clipboard only after confirmed auto-paste
 - Routes OpenRouter prompts per shortcut, with optional per-app overrides based on the active macOS app
 - Shows a floating overlay with live audio level, recording/enhancing state, and active-app icon when an app override is used
 - Keeps transcript history (`None`, `10`, or `100` entries) and a rolling in-app log (`1,000` entries)
@@ -61,7 +61,7 @@ The default shortcut is `Right Option` in `Both` mode.
 - Escape-to-cancel toggle
 - Sound effects toggle
 - Mute-during-recording toggle
-- Restore-clipboard-after-paste toggle
+- Restore-clipboard-after-confirmed-auto-paste toggle
 - Overlay position: `Top` or `Bottom`
 - History retention: `None`, `10`, `100`
 
@@ -99,9 +99,12 @@ When enhancement runs, the app appends the raw transcript inside `<transcription
 4. Releasing the shortcut, pressing again, or cancelling with `Esc` ends the session depending on mode.
 5. If a prompt is configured for that shortcut or active app, the transcript is sent to OpenRouter.
 6. The final text is copied to the clipboard and pasted with `Cmd+V`.
-7. History and logs are updated in-app.
+7. If confirmed auto-paste clipboard restore is enabled, VibeScribe restores the previous clipboard only after it can verify the target app accepted the paste; otherwise it keeps the transcript on the clipboard so you can paste manually.
+8. History and logs are updated in-app.
 
 If OpenRouter enhancement fails, VibeScribe falls back to pasting the original transcript and records the failure in history/logs.
+
+If the target field cannot be verified through Accessibility APIs, or the paste result does not exactly match the expected text and caret position, VibeScribe leaves the transcript on the clipboard instead of clearing it.
 
 ## Permissions
 
@@ -138,6 +141,7 @@ The package has no external Swift dependencies. The main targets are:
 - [`RuntimeCoordinator.swift`](/Users/marijn/Projects/vibescribe/Sources/VibeScribeCore/RuntimeCoordinator.swift): coordinates shortcut, recording, paste, and overlay behavior
 - [`Runtime/RecordingRuntime.swift`](/Users/marijn/Projects/vibescribe/Sources/VibeScribeCore/Runtime/RecordingRuntime.swift): recording lifecycle, Deepgram connection, reconnect/finalize logic
 - [`Runtime/PasteRuntime.swift`](/Users/marijn/Projects/vibescribe/Sources/VibeScribeCore/Runtime/PasteRuntime.swift): OpenRouter enhancement, clipboard handling, auto-paste
+- [`Runtime/PasteVerification.swift`](/Users/marijn/Projects/vibescribe/Sources/VibeScribeCore/Runtime/PasteVerification.swift): Accessibility-based auto-paste verification and UTF-16-safe paste matching
 - [`SettingsStore.swift`](/Users/marijn/Projects/vibescribe/Sources/VibeScribeCore/SettingsStore.swift): persisted settings in `UserDefaults`
 - [`PromptRoutingService.swift`](/Users/marijn/Projects/vibescribe/Sources/VibeScribeCore/PromptRoutingService.swift): shortcut-level and app-level prompt resolution
 - [`UI/`](/Users/marijn/Projects/vibescribe/Sources/VibeScribeCore/UI): SwiftUI settings, history, logs, and overlay views

@@ -202,6 +202,11 @@ final class AppState: ObservableObject {
         set { settingsStore.deepgramLanguage = newValue }
     }
 
+    var starredDeepgramLanguages: [DeepgramLanguage] {
+        get { settingsStore.starredDeepgramLanguages }
+        set { settingsStore.starredDeepgramLanguages = newValue }
+    }
+
     var historyLimit: HistoryLimit {
         get { settingsStore.historyLimit }
         set { settingsStore.historyLimit = newValue }

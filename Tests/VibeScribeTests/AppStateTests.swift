@@ -5,6 +5,7 @@ import XCTest
 final class AppStateTests: XCTestCase {
     private let apiKeyDefaultsKey = "VibeScribe.ApiKey"
     private let languageDefaultsKey = "VibeScribe.DeepgramLanguage"
+    private let starredLanguagesDefaultsKey = "VibeScribe.StarredDeepgramLanguages"
     private let shortcutsDefaultsKey = "VibeScribe.Shortcuts"
     private let escToCancelDefaultsKey = "VibeScribe.EscToCancelRecording"
     private let playSoundEffectsDefaultsKey = "VibeScribe.PlaySoundEffects"
@@ -14,6 +15,7 @@ final class AppStateTests: XCTestCase {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: apiKeyDefaultsKey)
         UserDefaults.standard.removeObject(forKey: languageDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: starredLanguagesDefaultsKey)
         UserDefaults.standard.removeObject(forKey: shortcutsDefaultsKey)
         UserDefaults.standard.removeObject(forKey: escToCancelDefaultsKey)
         UserDefaults.standard.removeObject(forKey: playSoundEffectsDefaultsKey)
@@ -23,6 +25,7 @@ final class AppStateTests: XCTestCase {
     override func tearDown() {
         UserDefaults.standard.removeObject(forKey: apiKeyDefaultsKey)
         UserDefaults.standard.removeObject(forKey: languageDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: starredLanguagesDefaultsKey)
         UserDefaults.standard.removeObject(forKey: shortcutsDefaultsKey)
         UserDefaults.standard.removeObject(forKey: escToCancelDefaultsKey)
         UserDefaults.standard.removeObject(forKey: playSoundEffectsDefaultsKey)
@@ -102,6 +105,46 @@ final class AppStateTests: XCTestCase {
 
         let restored = AppState()
         XCTAssertEqual(restored.deepgramLanguage, .french)
+    }
+
+    func testStarredDeepgramLanguagesDefaultToAutomaticAndEnglish() {
+        let state = AppState()
+        XCTAssertEqual(state.starredDeepgramLanguages, [.automatic, .english])
+    }
+
+    func testStarredDeepgramLanguagesPersistDeduplicatedValues() {
+        let state = AppState()
+        state.starredDeepgramLanguages = [.french, .english, .french]
+
+        let restored = AppState()
+        XCTAssertEqual(restored.starredDeepgramLanguages, [.french, .english])
+    }
+
+    func testStarredDeepgramLanguagesIgnoreInvalidStoredValues() {
+        UserDefaults.standard.set(
+            [DeepgramLanguage.french.rawValue, "invalid-language", DeepgramLanguage.english.rawValue, DeepgramLanguage.french.rawValue],
+            forKey: starredLanguagesDefaultsKey
+        )
+
+        let state = AppState()
+        XCTAssertEqual(state.starredDeepgramLanguages, [.french, .english])
+    }
+
+    func testStarredDeepgramLanguagesMigrationKeepsCurrentLanguage() {
+        UserDefaults.standard.set(DeepgramLanguage.french.rawValue, forKey: languageDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: starredLanguagesDefaultsKey)
+
+        let state = AppState()
+        XCTAssertEqual(state.deepgramLanguage, .french)
+        XCTAssertEqual(state.starredDeepgramLanguages, [.automatic, .english])
+    }
+
+    func testStarredDeepgramLanguagesCannotBecomeEmpty() {
+        let state = AppState()
+        state.starredDeepgramLanguages = [.english]
+        state.starredDeepgramLanguages = []
+
+        XCTAssertEqual(state.starredDeepgramLanguages, [.english])
     }
 
     // MARK: - Shortcuts Persistence

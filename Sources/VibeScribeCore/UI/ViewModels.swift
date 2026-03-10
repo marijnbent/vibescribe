@@ -16,12 +16,39 @@ final class GeneralSettingsViewModel: ObservableObject {
 
     var microphonePermission: PermissionStatus { permissionService.microphonePermission }
     var accessibilityPermission: PermissionStatus { permissionService.accessibilityPermission }
+    var deepgramLanguage: DeepgramLanguage { settingsStore.deepgramLanguage }
+    var starredDeepgramLanguages: [DeepgramLanguage] { settingsStore.starredDeepgramLanguages }
 
     func binding<Value>(for keyPath: ReferenceWritableKeyPath<SettingsStore, Value>) -> Binding<Value> {
         Binding(
             get: { self.settingsStore[keyPath: keyPath] },
             set: { self.settingsStore[keyPath: keyPath] = $0 }
         )
+    }
+
+    func menuBarLanguages(matching query: String) -> [DeepgramLanguage] {
+        DeepgramLanguage.sortedForSettings(
+            DeepgramLanguage.allCases.filter { $0.matchesSearch(query) },
+            starred: Set(settingsStore.starredDeepgramLanguages)
+        )
+    }
+
+    func isLanguageStarred(_ language: DeepgramLanguage) -> Bool {
+        settingsStore.starredDeepgramLanguages.contains(language)
+    }
+
+    func canToggleStarRemoval(for language: DeepgramLanguage) -> Bool {
+        !isLanguageStarred(language) || settingsStore.starredDeepgramLanguages.count > 1
+    }
+
+    func toggleStar(for language: DeepgramLanguage) {
+        if let index = settingsStore.starredDeepgramLanguages.firstIndex(of: language) {
+            guard settingsStore.starredDeepgramLanguages.count > 1 else { return }
+            settingsStore.starredDeepgramLanguages.remove(at: index)
+            return
+        }
+
+        settingsStore.starredDeepgramLanguages.append(language)
     }
 
     func refreshPermissions() {

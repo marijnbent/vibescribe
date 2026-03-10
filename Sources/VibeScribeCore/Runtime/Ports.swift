@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import AVFoundation
 import Foundation
 
@@ -43,6 +44,36 @@ protocol PasteboardPort {
     func writeString(_ value: String)
     func restore(_ snapshot: PasteboardSnapshotPayload)
     func sendPasteCommand() -> Bool
+}
+
+struct PreparedPasteVerification {
+    let expectedText: String
+    let expectedValue: String
+    let expectedSelectedRange: NSRange
+    let focusedElement: AXUIElement
+    let initialValue: String
+    let initialSelectedRange: NSRange
+}
+
+enum PasteVerificationCheck: Equatable {
+    case confirmed
+    case pending
+    case unconfirmed(PasteVerificationFailureReason)
+}
+
+enum PasteVerificationFailureReason: Equatable {
+    case accessibilityUnavailable
+    case unsupportedFocusedElement
+    case focusChanged
+    case valueUnavailable
+    case selectionUnavailable
+    case mismatch
+    case timedOut
+}
+
+protocol PasteVerificationPort {
+    func prepare(expectedText: String) -> PreparedPasteVerification?
+    func check(_ verification: PreparedPasteVerification) -> PasteVerificationCheck
 }
 
 protocol SoundPort {

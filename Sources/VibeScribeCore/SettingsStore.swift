@@ -4,6 +4,7 @@ import Foundation
 final class SettingsStore: ObservableObject {
     static let apiKeyKey = "VibeScribe.ApiKey"
     static let deepgramLanguageKey = "VibeScribe.DeepgramLanguage"
+    static let starredDeepgramLanguagesKey = "VibeScribe.StarredDeepgramLanguages"
     static let historyLimitKey = "VibeScribe.HistoryLimit"
     static let shortcutsKey = "VibeScribe.Shortcuts"
     static let openRouterApiKeyKey = "VibeScribe.OpenRouterApiKey"
@@ -88,6 +89,22 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    @Published var starredDeepgramLanguages: [DeepgramLanguage] {
+        didSet {
+            let normalized = DeepgramLanguage.normalizedStarredLanguages(
+                starredDeepgramLanguages,
+                fallback: oldValue.isEmpty ? DeepgramLanguage.defaultStarredLanguages : oldValue
+            )
+
+            if normalized != starredDeepgramLanguages {
+                starredDeepgramLanguages = normalized
+                return
+            }
+
+            defaults.set(normalized.map(\.rawValue), forKey: Self.starredDeepgramLanguagesKey)
+        }
+    }
+
     @Published var historyLimit: HistoryLimit {
         didSet {
             defaults.set(historyLimit.rawValue, forKey: Self.historyLimitKey)
@@ -112,6 +129,9 @@ final class SettingsStore: ObservableObject {
 
         let savedLanguage = defaults.string(forKey: Self.deepgramLanguageKey)
         deepgramLanguage = savedLanguage.flatMap(DeepgramLanguage.init(rawValue:)) ?? .automatic
+        starredDeepgramLanguages = DeepgramLanguage.starredLanguages(
+            from: defaults.stringArray(forKey: Self.starredDeepgramLanguagesKey)
+        )
 
         let savedLimit = defaults.integer(forKey: Self.historyLimitKey)
         historyLimit = HistoryLimit(rawValue: savedLimit) ?? .ten

@@ -80,7 +80,13 @@ enum DeepgramLanguage: String, CaseIterable, Identifiable {
     case urdu = "ur"
     case vietnamese = "vi"
 
+    static let defaultStarredLanguages: [DeepgramLanguage] = [.automatic, .english]
+
     var id: String { rawValue }
+
+    var sortsBeforeAllOtherLanguages: Bool {
+        self == .automatic
+    }
 
     var deepgramCode: String {
         switch self {
@@ -250,5 +256,54 @@ enum DeepgramLanguage: String, CaseIterable, Identifiable {
         case .vietnamese:
             return "Vietnamese"
         }
+    }
+
+    func matchesSearch(_ query: String) -> Bool {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else { return true }
+        return displayName.localizedCaseInsensitiveContains(trimmedQuery)
+    }
+
+    static func normalizedStarredLanguages(
+        _ languages: [DeepgramLanguage],
+        fallback: [DeepgramLanguage] = defaultStarredLanguages
+    ) -> [DeepgramLanguage] {
+        var seen = Set<DeepgramLanguage>()
+        let normalized = languages.filter { seen.insert($0).inserted }
+        return normalized.isEmpty ? fallback : normalized
+    }
+
+    static func starredLanguages(from rawValues: [String]?) -> [DeepgramLanguage] {
+        guard let rawValues else { return defaultStarredLanguages }
+        let languages = rawValues.compactMap(DeepgramLanguage.init(rawValue:))
+        return normalizedStarredLanguages(languages)
+    }
+
+    static func sortedForMenuBar(_ languages: [DeepgramLanguage]) -> [DeepgramLanguage] {
+        languages.sorted { compareForDisplay($0, $1) == .orderedAscending }
+    }
+
+    static func sortedForSettings(
+        _ languages: [DeepgramLanguage],
+        starred: Set<DeepgramLanguage>
+    ) -> [DeepgramLanguage] {
+        languages.sorted { lhs, rhs in
+            let lhsIsStarred = starred.contains(lhs)
+            let rhsIsStarred = starred.contains(rhs)
+
+            if lhsIsStarred != rhsIsStarred {
+                return lhsIsStarred && !rhsIsStarred
+            }
+
+            return compareForDisplay(lhs, rhs) == .orderedAscending
+        }
+    }
+
+    private static func compareForDisplay(_ lhs: DeepgramLanguage, _ rhs: DeepgramLanguage) -> ComparisonResult {
+        if lhs.sortsBeforeAllOtherLanguages != rhs.sortsBeforeAllOtherLanguages {
+            return lhs.sortsBeforeAllOtherLanguages ? .orderedAscending : .orderedDescending
+        }
+
+        return lhs.displayName.localizedStandardCompare(rhs.displayName)
     }
 }

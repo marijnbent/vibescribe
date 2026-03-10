@@ -1,4 +1,5 @@
 import AVFoundation
+import ApplicationServices
 import Foundation
 @testable import VibeScribeCore
 
@@ -51,17 +52,15 @@ final class ManualScheduler: SchedulerPort {
     }
 
     private func runDueTasks() {
-        var remaining: [Entry] = []
-        for entry in entries {
-            if entry.deadline <= clock.currentTime {
-                if !entry.token.isCancelled {
-                    entry.block()
-                }
-            } else {
-                remaining.append(entry)
+        while true {
+            entries.sort { $0.deadline < $1.deadline }
+            guard let next = entries.first, next.deadline <= clock.currentTime else { return }
+
+            entries.removeFirst()
+            if !next.token.isCancelled {
+                next.block()
             }
         }
-        entries = remaining
     }
 }
 
@@ -183,4 +182,49 @@ final class FakePasteboardPort: PasteboardPort {
         onSendPasteCommand?()
         return sendPasteCommandResult
     }
+}
+
+final class FakePasteVerificationPort: PasteVerificationPort {
+    var prepareCallCount = 0
+    var checkCallCount = 0
+    var prepareResult: PreparedPasteVerification?
+    var checkResults: [PasteVerificationCheck] = []
+    var onPrepare: ((String) -> Void)?
+
+    func prepare(expectedText: String) -> PreparedPasteVerification? {
+        prepareCallCount += 1
+        onPrepare?(expectedText)
+        return prepareResult
+    }
+
+    func check(_ verification: PreparedPasteVerification) -> PasteVerificationCheck {
+        checkCallCount += 1
+        if !checkResults.isEmpty {
+            return checkResults.removeFirst()
+        }
+        return .pending
+    }
+}
+
+func makePreparedPasteVerification(
+    expectedText: String = "hello world",
+    expectedValue: String? = nil,
+    expectedSelectedRange: NSRange? = nil,
+    initialValue: String = "",
+    initialSelectedRange: NSRange = NSRange(location: 0, length: 0)
+) -> PreparedPasteVerification {
+    let expectedValue = expectedValue ?? expectedText
+    let expectedSelectedRange = expectedSelectedRange ?? NSRange(
+        location: (expectedText as NSString).length,
+        length: 0
+    )
+
+    return PreparedPasteVerification(
+        expectedText: expectedText,
+        expectedValue: expectedValue,
+        expectedSelectedRange: expectedSelectedRange,
+        focusedElement: AXUIElementCreateSystemWide(),
+        initialValue: initialValue,
+        initialSelectedRange: initialSelectedRange
+    )
 }
