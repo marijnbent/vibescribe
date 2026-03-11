@@ -47,6 +47,23 @@ struct GeneralSettingsView: View {
             }
 
             Section {
+                Picker("Microphone", selection: viewModel.binding(for: \.audioInputSelection)) {
+                    Text(viewModel.resolvedAudioInputSelection.systemDefaultDevice.map {
+                        "System Default (\($0.name))"
+                    } ?? "System Default")
+                        .tag(AudioInputSelection.systemDefault)
+
+                    ForEach(viewModel.availableAudioInputs) { input in
+                        Text(input.name).tag(AudioInputSelection.device(input.id))
+                    }
+                }
+            } header: {
+                Text("Recording")
+            } footer: {
+                Text(viewModel.audioInputHelpText)
+            }
+
+            Section {
                 SecureField("API Key", text: viewModel.binding(for: \.apiKey))
                 Picker("Current language", selection: viewModel.binding(for: \.deepgramLanguage)) {
                     ForEach(DeepgramLanguage.allCases) { language in

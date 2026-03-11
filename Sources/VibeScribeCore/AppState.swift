@@ -197,6 +197,11 @@ final class AppState: ObservableObject {
         set { settingsStore.overlayPosition = newValue }
     }
 
+    var audioInputSelection: AudioInputSelection {
+        get { settingsStore.audioInputSelection }
+        set { settingsStore.audioInputSelection = newValue }
+    }
+
     var deepgramLanguage: DeepgramLanguage {
         get { settingsStore.deepgramLanguage }
         set { settingsStore.deepgramLanguage = newValue }

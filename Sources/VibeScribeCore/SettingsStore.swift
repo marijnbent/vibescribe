@@ -16,6 +16,7 @@ final class SettingsStore: ObservableObject {
     static let muteMediaDuringRecordingKey = "VibeScribe.MuteMediaDuringRecording"
     static let restoreClipboardAfterPasteKey = "VibeScribe.RestoreClipboardAfterPaste"
     static let overlayPositionKey = "VibeScribe.OverlayPosition"
+    static let audioInputSelectionKey = "VibeScribe.AudioInputSelection"
 
     private let defaults: UserDefaults
 
@@ -83,6 +84,12 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    @Published var audioInputSelection: AudioInputSelection {
+        didSet {
+            defaults.set(audioInputSelection.storedValue, forKey: Self.audioInputSelectionKey)
+        }
+    }
+
     @Published var deepgramLanguage: DeepgramLanguage {
         didSet {
             defaults.set(deepgramLanguage.rawValue, forKey: Self.deepgramLanguageKey)
@@ -126,6 +133,10 @@ final class SettingsStore: ObservableObject {
 
         let savedPosition = defaults.string(forKey: Self.overlayPositionKey)
         overlayPosition = savedPosition.flatMap(OverlayPosition.init(rawValue:)) ?? .top
+
+        audioInputSelection = AudioInputSelection(
+            storedValue: defaults.string(forKey: Self.audioInputSelectionKey)
+        )
 
         let savedLanguage = defaults.string(forKey: Self.deepgramLanguageKey)
         deepgramLanguage = savedLanguage.flatMap(DeepgramLanguage.init(rawValue:)) ?? .automatic

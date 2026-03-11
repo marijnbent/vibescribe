@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Combine
 import SwiftUI
 
@@ -16,8 +17,31 @@ final class GeneralSettingsViewModel: ObservableObject {
 
     var microphonePermission: PermissionStatus { permissionService.microphonePermission }
     var accessibilityPermission: PermissionStatus { permissionService.accessibilityPermission }
+    var availableAudioInputs: [AudioInputDeviceDescriptor] { AudioInputCatalog.availableDevices() }
+    var resolvedAudioInputSelection: ResolvedAudioInputSelection {
+        AudioInputCatalog.resolvedSelection(settingsStore.audioInputSelection)
+    }
     var deepgramLanguage: DeepgramLanguage { settingsStore.deepgramLanguage }
     var starredDeepgramLanguages: [DeepgramLanguage] { settingsStore.starredDeepgramLanguages }
+    var audioInputHelpText: String {
+        let resolved = resolvedAudioInputSelection
+
+        switch settingsStore.audioInputSelection {
+        case .systemDefault:
+            if let systemDefaultDevice = resolved.systemDefaultDevice {
+                return "Uses the current macOS default microphone: \(systemDefaultDevice.name)."
+            }
+            return "Uses the current macOS default microphone for new recordings."
+        case .device(let uniqueID):
+            if let selectedDevice = resolved.selectedDevice {
+                return "Uses \(selectedDevice.name) for new recordings, even if your macOS default changes."
+            }
+            if let systemDefaultDevice = resolved.systemDefaultDevice {
+                return "The saved microphone is unavailable. New recordings will fall back to \(systemDefaultDevice.name) until it comes back."
+            }
+            return "The saved microphone (\(uniqueID)) is unavailable and no fallback input is currently available."
+        }
+    }
 
     func binding<Value>(for keyPath: ReferenceWritableKeyPath<SettingsStore, Value>) -> Binding<Value> {
         Binding(
@@ -71,6 +95,13 @@ final class GeneralSettingsViewModel: ObservableObject {
             .store(in: &cancellables)
 
         permissionService.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .AVCaptureDeviceWasConnected)
+            .merge(with: NotificationCenter.default.publisher(for: .AVCaptureDeviceWasDisconnected))
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
             }

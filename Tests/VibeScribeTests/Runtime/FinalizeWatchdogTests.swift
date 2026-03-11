@@ -18,6 +18,13 @@ final class FinalizeWatchdogTests: XCTestCase {
             scheduler: scheduler,
             clock: clock,
             activeApplicationProvider: { nil },
+            audioInputSelectionProvider: {
+                ResolvedAudioInputSelection(
+                    selection: .systemDefault,
+                    selectedDevice: nil,
+                    systemDefaultDevice: nil
+                )
+            },
             languageProvider: { .automatic },
             apiKeyProvider: { "dg_key" },
             resolvedEnhancementPromptProvider: { _, _ in

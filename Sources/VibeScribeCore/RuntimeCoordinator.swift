@@ -61,6 +61,9 @@ final class RuntimeCoordinator {
             scheduler: schedulerPort,
             clock: clockPort,
             activeApplicationProvider: activeApplicationProvider,
+            audioInputSelectionProvider: { [weak settingsStore] in
+                AudioInputCatalog.resolvedSelection(settingsStore?.audioInputSelection ?? .systemDefault)
+            },
             languageProvider: { [weak settingsStore] in
                 settingsStore?.deepgramLanguage ?? .automatic
             },

@@ -159,6 +159,13 @@ final class RecordingRuntimeTests: XCTestCase {
             scheduler: scheduler,
             clock: clock,
             activeApplicationProvider: activeApplicationProvider,
+            audioInputSelectionProvider: {
+                ResolvedAudioInputSelection(
+                    selection: .systemDefault,
+                    selectedDevice: nil,
+                    systemDefaultDevice: nil
+                )
+            },
             languageProvider: { .automatic },
             apiKeyProvider: { "dg_key" },
             resolvedEnhancementPromptProvider: resolvedEnhancementPromptProvider,

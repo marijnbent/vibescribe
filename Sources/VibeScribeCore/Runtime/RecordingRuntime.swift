@@ -26,6 +26,7 @@ final class RecordingRuntime {
     private let clock: ClockPort
 
     private let activeApplicationProvider: () -> ActiveApplicationContext?
+    private let audioInputSelectionProvider: () -> ResolvedAudioInputSelection
     private let languageProvider: () -> DeepgramLanguage
     private let apiKeyProvider: () -> String
     private let resolvedEnhancementPromptProvider: (UUID?, String?) -> EnhancementPromptContext?
@@ -78,6 +79,7 @@ final class RecordingRuntime {
         scheduler: SchedulerPort,
         clock: ClockPort,
         activeApplicationProvider: @escaping () -> ActiveApplicationContext?,
+        audioInputSelectionProvider: @escaping () -> ResolvedAudioInputSelection,
         languageProvider: @escaping () -> DeepgramLanguage,
         apiKeyProvider: @escaping () -> String,
         resolvedEnhancementPromptProvider: @escaping (UUID?, String?) -> EnhancementPromptContext?,
@@ -94,6 +96,7 @@ final class RecordingRuntime {
         self.scheduler = scheduler
         self.clock = clock
         self.activeApplicationProvider = activeApplicationProvider
+        self.audioInputSelectionProvider = audioInputSelectionProvider
         self.languageProvider = languageProvider
         self.apiKeyProvider = apiKeyProvider
         self.resolvedEnhancementPromptProvider = resolvedEnhancementPromptProvider
@@ -194,6 +197,7 @@ final class RecordingRuntime {
 
             let format = try audioCapture.start()
             currentRecordingFormat = format
+            let resolvedAudioInput = audioInputSelectionProvider()
             let startedAt = clock.now()
             ownership = RecordingOwnership(
                 ownerShortcutID: ownerShortcutID,
@@ -207,6 +211,11 @@ final class RecordingRuntime {
             onStatus?(.listening)
             onOverlayUpdate?(true, "Listening", overlayAppIcon)
             onLog?("Audio capture started (\(format.sampleRate) Hz, \(format.channels) ch).", .info)
+            if resolvedAudioInput.isFallbackToSystemDefault {
+                onLog?("Input: \(resolvedAudioInput.displayName). Saved microphone unavailable, using fallback.", .warning)
+            } else {
+                onLog?("Input: \(resolvedAudioInput.displayName).", .info)
+            }
             deepgram.connect(apiKey: apiKey, format: format, language: languageProvider())
 
             audioCapture.onBuffer = { [weak self] buffer in

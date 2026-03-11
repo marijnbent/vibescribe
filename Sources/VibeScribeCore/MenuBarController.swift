@@ -51,15 +51,7 @@ final class MenuBarController: NSObject {
         super.init()
 
         if let button = statusItem.button {
-            let menuBarImage: NSImage?
-            if let url = Bundle.module.url(forResource: "menubar_icon", withExtension: "png"),
-               let img = NSImage(contentsOf: url) {
-                img.isTemplate = true
-                menuBarImage = img
-            } else {
-                menuBarImage = NSImage(systemSymbolName: "waveform", accessibilityDescription: "VibeScribe")
-            }
-            button.image = menuBarImage
+            button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "VibeScribe")
         }
 
         bindSettings()

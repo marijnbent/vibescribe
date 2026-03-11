@@ -10,6 +10,7 @@ final class AppStateTests: XCTestCase {
     private let escToCancelDefaultsKey = "VibeScribe.EscToCancelRecording"
     private let playSoundEffectsDefaultsKey = "VibeScribe.PlaySoundEffects"
     private let restoreClipboardAfterPasteDefaultsKey = "VibeScribe.RestoreClipboardAfterPaste"
+    private let audioInputSelectionDefaultsKey = "VibeScribe.AudioInputSelection"
 
     override func setUp() {
         super.setUp()
@@ -20,6 +21,7 @@ final class AppStateTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: escToCancelDefaultsKey)
         UserDefaults.standard.removeObject(forKey: playSoundEffectsDefaultsKey)
         UserDefaults.standard.removeObject(forKey: restoreClipboardAfterPasteDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: audioInputSelectionDefaultsKey)
     }
 
     override func tearDown() {
@@ -30,6 +32,7 @@ final class AppStateTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: escToCancelDefaultsKey)
         UserDefaults.standard.removeObject(forKey: playSoundEffectsDefaultsKey)
         UserDefaults.standard.removeObject(forKey: restoreClipboardAfterPasteDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: audioInputSelectionDefaultsKey)
         super.tearDown()
     }
 
@@ -233,5 +236,18 @@ final class AppStateTests: XCTestCase {
 
         let restored = AppState()
         XCTAssertTrue(restored.restoreClipboardAfterPaste)
+    }
+
+    func testAudioInputSelectionDefaultsToSystemDefault() {
+        let state = AppState()
+        XCTAssertEqual(state.audioInputSelection, .systemDefault)
+    }
+
+    func testAudioInputSelectionPersistsSelectedDevice() {
+        let state = AppState()
+        state.audioInputSelection = .device("usb-mic-123")
+
+        let restored = AppState()
+        XCTAssertEqual(restored.audioInputSelection, .device("usb-mic-123"))
     }
 }

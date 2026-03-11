@@ -26,7 +26,7 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
     private let soundPort: SoundPort = NSSoundAdapter()
     private let pasteboardPort: PasteboardPort = NSPasteboardAdapter()
     private let pasteVerificationPort: PasteVerificationPort = AccessibilityPasteVerificationAdapter()
-    private let audioCapturePort: AudioCapturePort = AudioCaptureControllerAdapter()
+    private var audioCapturePort: AudioCapturePort!
     private let deepgramPort: DeepgramPort = DeepgramClientAdapter()
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
@@ -77,6 +77,13 @@ public final class VibeScribeApp: NSObject, NSApplicationDelegate {
         permissionService = PermissionService()
         mainViewModel = MainViewModel()
         promptRoutingService = PromptRoutingService()
+        audioCapturePort = AudioCaptureControllerAdapter(
+            controller: AudioCaptureController(
+                preferredInputProvider: { [weak self] in
+                    self?.settingsStore.audioInputSelection ?? .systemDefault
+                }
+            )
+        )
     }
 
     private func configureWindows() {
