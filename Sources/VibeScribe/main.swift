@@ -1,3 +1,0 @@
-import VibeScribeCore
-
-VibeScribeApp.main()

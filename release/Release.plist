@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>AppName</key>
+  <string>Talkie</string>
+  <key>BuildBackend</key>
+  <string>swiftpm</string>
+  <key>BuildNumber</key>
+  <string>1</string>
+  <key>BundleIdentifier</key>
+  <string>nl.bentjes.talkie</string>
+  <key>Copyright</key>
+  <string>Copyright 2026 Marijn Bentjes</string>
+  <key>DevelopmentTeam</key>
+  <string>S4ZHLE3A52</string>
+  <key>IconSource</key>
+  <string>Icon.png</string>
+  <key>LSUIElement</key>
+  <true/>
+  <key>MarketingVersion</key>
+  <string>0.1.0</string>
+  <key>MinimumSystemVersion</key>
+  <string>13.0</string>
+  <key>NSAccessibilityUsageDescription</key>
+  <string>Talkie needs accessibility access to paste transcripts into other apps.</string>
+  <key>NSInputMonitoringUsageDescription</key>
+  <string>Talkie needs input monitoring to capture the push-to-talk hotkey.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Talkie needs microphone access to transcribe speech.</string>
+  <key>ProductName</key>
+  <string>Talkie</string>
+  <key>SigningIdentity</key>
+  <string>Apple Development: marijnbent@gmail.com (S4ZHLE3A52)</string>
+</dict>
+</plist>

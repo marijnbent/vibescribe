@@ -4,24 +4,24 @@
 import PackageDescription
 
 let package = Package(
-    name: "VibeScribe",
+    name: "Talkie",
     platforms: [
         .macOS(.v13),
     ],
     targets: [
         .target(
-            name: "VibeScribeCore",
+            name: "TalkieCore",
             resources: [
                 .process("Resources"),
             ]
         ),
         .executableTarget(
-            name: "VibeScribe",
-            dependencies: ["VibeScribeCore"]
+            name: "Talkie",
+            dependencies: ["TalkieCore"]
         ),
         .testTarget(
-            name: "VibeScribeTests",
-            dependencies: ["VibeScribeCore"]
+            name: "TalkieTests",
+            dependencies: ["TalkieCore"]
         ),
     ]
 )

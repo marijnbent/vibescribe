@@ -1,0 +1,3 @@
+import TalkieCore
+
+TalkieApp.main()

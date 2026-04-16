@@ -1,5 +1,5 @@
 """
-VibeScribe icon generator using Pillow only.
+Talkie icon generator using Pillow only.
 Produces:
   - AppIcon_new.png (1024x1024, premium gradient + microphone)
   - menubar_icon_new.png (44x44, black template silhouette)
