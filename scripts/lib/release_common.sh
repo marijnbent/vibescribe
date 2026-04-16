@@ -318,12 +318,12 @@ release::build_swiftpm_app() {
 
 release::build_xcode_app() {
   local xcode_project xcode_scheme derived_data_path built_app_path app_bundle
-  local host_arch development_team signing_identity marketing_version build_number
+  local host_arch development_team code_sign_identity marketing_version build_number
 
   xcode_project="$(release::require_config XcodeProject)"
   xcode_scheme="$(release::require_config XcodeScheme)"
   development_team="$(release::require_config DevelopmentTeam)"
-  signing_identity="$(release::require_config SigningIdentity)"
+  code_sign_identity="$(release::config XcodeCodeSignIdentity || true)"
   marketing_version="$(release::require_config MarketingVersion)"
   build_number="$(release::require_config BuildNumber)"
   host_arch="$(uname -m)"
@@ -334,18 +334,32 @@ release::build_xcode_app() {
 
   (
     cd "$ROOT_DIR"
-    xcodebuild \
-      -project "$ROOT_DIR/$xcode_project" \
-      -scheme "$xcode_scheme" \
-      -configuration Release \
-      -derivedDataPath "$derived_data_path" \
-      ARCHS="$host_arch" \
-      ONLY_ACTIVE_ARCH=YES \
-      DEVELOPMENT_TEAM="$development_team" \
-      CODE_SIGN_IDENTITY="$signing_identity" \
-      MARKETING_VERSION="$marketing_version" \
-      CURRENT_PROJECT_VERSION="$build_number" \
-      build
+    if [[ -n "$code_sign_identity" ]]; then
+      xcodebuild \
+        -project "$ROOT_DIR/$xcode_project" \
+        -scheme "$xcode_scheme" \
+        -configuration Release \
+        -derivedDataPath "$derived_data_path" \
+        ARCHS="$host_arch" \
+        ONLY_ACTIVE_ARCH=YES \
+        DEVELOPMENT_TEAM="$development_team" \
+        CODE_SIGN_IDENTITY="$code_sign_identity" \
+        MARKETING_VERSION="$marketing_version" \
+        CURRENT_PROJECT_VERSION="$build_number" \
+        build
+    else
+      xcodebuild \
+        -project "$ROOT_DIR/$xcode_project" \
+        -scheme "$xcode_scheme" \
+        -configuration Release \
+        -derivedDataPath "$derived_data_path" \
+        ARCHS="$host_arch" \
+        ONLY_ACTIVE_ARCH=YES \
+        DEVELOPMENT_TEAM="$development_team" \
+        MARKETING_VERSION="$marketing_version" \
+        CURRENT_PROJECT_VERSION="$build_number" \
+        build
+    fi
   )
 
   built_app_path="$derived_data_path/Build/Products/Release/$(release::app_name).app"
