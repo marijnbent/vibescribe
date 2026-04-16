@@ -123,6 +123,65 @@ final class HistoryTests: XCTestCase {
         XCTAssertEqual(restored.historyLimit, .hundred)
     }
 
+    func testTranscriptHistoryStorePersistsEntries() {
+        let temporaryDirectoryURL = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporaryDirectoryURL) }
+        let recordingURL = temporaryDirectoryURL.appendingPathComponent("test.wav")
+        FileManager.default.createFile(atPath: recordingURL.path, contents: Data(), attributes: nil)
+
+        let store = TranscriptHistoryStore(
+            fileURL: temporaryDirectoryURL.appendingPathComponent("history.json")
+        )
+        let entry = TranscriptHistoryEntry(
+            timestamp: Date(timeIntervalSince1970: 1_234),
+            text: "hello world",
+            enhancedText: "Hello world.",
+            transcriptionError: nil,
+            enhancementError: nil,
+            promptName: "Clean up",
+            enhancementPromptText: "Prompt",
+            rawRecordingFileURL: recordingURL,
+            transcriptionLanguage: .english,
+            usedActiveAppPrompt: true
+        )
+
+        store.saveEntries([entry])
+        let restored = store.loadEntries()
+
+        XCTAssertEqual(restored.count, 1)
+        XCTAssertEqual(restored[0].id, entry.id)
+        XCTAssertEqual(restored[0].timestamp, entry.timestamp)
+        XCTAssertEqual(restored[0].text, entry.text)
+        XCTAssertEqual(restored[0].enhancedText, entry.enhancedText)
+        XCTAssertEqual(restored[0].promptName, entry.promptName)
+        XCTAssertEqual(restored[0].enhancementPromptText, entry.enhancementPromptText)
+        XCTAssertEqual(restored[0].rawRecordingFileURL, recordingURL)
+        XCTAssertEqual(restored[0].transcriptionLanguage, .english)
+        XCTAssertTrue(restored[0].usedActiveAppPrompt)
+    }
+
+    func testTranscriptHistoryStoreDropsMissingRecordingURLs() {
+        let temporaryDirectoryURL = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporaryDirectoryURL) }
+        let missingRecordingURL = temporaryDirectoryURL.appendingPathComponent("missing.wav")
+        let store = TranscriptHistoryStore(
+            fileURL: temporaryDirectoryURL.appendingPathComponent("history.json")
+        )
+        let entry = TranscriptHistoryEntry(
+            timestamp: Date(),
+            text: "hello world",
+            rawRecordingFileURL: missingRecordingURL,
+            transcriptionLanguage: .english
+        )
+
+        store.saveEntries([entry])
+        let restored = store.loadEntries()
+
+        XCTAssertEqual(restored.count, 1)
+        XCTAssertNil(restored[0].rawRecordingFileURL)
+        XCTAssertEqual(restored[0].transcriptionLanguage, .english)
+    }
+
     // MARK: - Display Text
 
     func testDisplayTextShortTranscript() {
@@ -289,5 +348,12 @@ final class HistoryTests: XCTestCase {
 
     func testHistoryLimitAllCases() {
         XCTAssertEqual(HistoryLimit.allCases.count, 3)
+    }
+
+    private func makeTemporaryDirectory() -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
     }
 }

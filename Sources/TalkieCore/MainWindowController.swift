@@ -3,14 +3,13 @@ import Combine
 import SwiftUI
 
 @MainActor
-final class MainWindowController: NSObject, NSWindowDelegate {
+final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let mainViewModel: MainViewModel
     private let generalViewModel: GeneralSettingsViewModel
     private let shortcutsViewModel: ShortcutsSettingsViewModel
     private let enhancementsViewModel: EnhancementsSettingsViewModel
     private let historyViewModel: HistoryViewModel
     private let logsViewModel: LogsViewModel
-    private var window: NSWindow?
     private var tabSubscription: AnyCancellable?
 
     init(
@@ -35,49 +34,54 @@ final class MainWindowController: NSObject, NSWindowDelegate {
             sessionState: sessionState
         )
         self.logsViewModel = LogsViewModel(sessionState: sessionState)
+        
+        let rootView = MainView(
+            mainViewModel: mainViewModel,
+            generalViewModel: generalViewModel,
+            shortcutsViewModel: shortcutsViewModel,
+            enhancementsViewModel: enhancementsViewModel,
+            historyViewModel: historyViewModel,
+            logsViewModel: logsViewModel
+        )
+        let hosting = NSHostingController(rootView: rootView)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 560),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Talkie"
+        window.contentViewController = hosting
+        window.center()
+        window.isReleasedWhenClosed = false
+        window.initialFirstResponder = nil
+        window.delegate = nil
+
+        super.init(window: window)
+
+        window.delegate = self
+
+        let toolbar = NSToolbar(identifier: "SettingsToolbar")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconAndLabel
+        toolbar.selectedItemIdentifier = mainViewModel.selectedTab.toolbarIdentifier
+        window.toolbar = toolbar
+        window.toolbarStyle = .preference
+
+        tabSubscription = mainViewModel.$selectedTab.sink { [weak toolbar] tab in
+            toolbar?.selectedItemIdentifier = tab.toolbarIdentifier
+        }
     }
 
-    func show() {
-        let shouldCenterWindow = window == nil || window?.isVisible == false
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
-        if window == nil {
-            let rootView = MainView(
-                mainViewModel: mainViewModel,
-                generalViewModel: generalViewModel,
-                shortcutsViewModel: shortcutsViewModel,
-                enhancementsViewModel: enhancementsViewModel,
-                historyViewModel: historyViewModel,
-                logsViewModel: logsViewModel
-            )
-            let hosting = NSHostingController(rootView: rootView)
-
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 680, height: 560),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable],
-                backing: .buffered,
-                defer: false
-            )
-            window.title = "Talkie"
-            window.contentViewController = hosting
-            window.center()
-            window.isReleasedWhenClosed = false
-            window.initialFirstResponder = nil
-            window.delegate = self
-
-            let toolbar = NSToolbar(identifier: "SettingsToolbar")
-            toolbar.delegate = self
-            toolbar.displayMode = .iconAndLabel
-            toolbar.selectedItemIdentifier = mainViewModel.selectedTab.toolbarIdentifier
-            window.toolbar = toolbar
-            window.toolbarStyle = .preference
-
-            self.window = window
-
-            tabSubscription = mainViewModel.$selectedTab.sink { [weak toolbar] tab in
-                toolbar?.selectedItemIdentifier = tab.toolbarIdentifier
-            }
-        }
-
+    func showWindowAndActivate() {
+        updateActivationPolicy(forMainWindowIsOpen: true)
+        let shouldCenterWindow = window?.isVisible != true
+        showWindow(nil)
         if shouldCenterWindow {
             window?.center()
         }
@@ -86,8 +90,16 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        tabSubscription = nil
-        window = nil
+        updateActivationPolicy(forMainWindowIsOpen: false)
+    }
+
+    private func updateActivationPolicy(forMainWindowIsOpen isOpen: Bool) {
+        let policy: NSApplication.ActivationPolicy = isOpen ? .regular : .accessory
+        guard NSApp.activationPolicy() != policy else {
+            return
+        }
+
+        NSApp.setActivationPolicy(policy)
     }
 
     @objc private func toolbarItemClicked(_ sender: NSToolbarItem) {

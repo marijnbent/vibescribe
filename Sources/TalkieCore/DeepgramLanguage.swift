@@ -1,6 +1,6 @@
 import Foundation
 
-enum DeepgramLanguage: String, CaseIterable, Identifiable {
+enum DeepgramLanguage: String, Codable, CaseIterable, Identifiable {
     case automatic
     case arabic = "ar"
     case arabicUnitedArabEmirates = "ar-AE"

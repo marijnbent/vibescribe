@@ -31,7 +31,7 @@ final class WindowCoordinator {
 
     func showMain(tab: SettingsTab) {
         mainViewModel.selectedTab = tab
-        mainWindowController.show()
+        mainWindowController.showWindowAndActivate()
     }
 
     func showSettings() {

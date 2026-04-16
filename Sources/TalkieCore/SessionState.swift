@@ -6,12 +6,18 @@ import SwiftUI
 final class SessionState: ObservableObject {
     static let maxLogEntries = 1_000
 
+    private let historyStore: TranscriptHistoryStore?
+
     @Published var recordingPhase: RecordingPhase = .idle
     @Published var appStatus: AppStatus = .idle
     @Published var lastTranscript = ""
     @Published var finalTranscript = ""
     @Published var logs: [LogEntry] = []
-    @Published var transcriptHistory: [TranscriptHistoryEntry] = []
+    @Published var transcriptHistory: [TranscriptHistoryEntry] = [] {
+        didSet {
+            historyStore?.saveEntries(transcriptHistory)
+        }
+    }
     @Published var overlayPulseID = UUID()
     @Published var overlayVisible = false
     @Published var overlayLabel = "Listening"
@@ -28,6 +34,14 @@ final class SessionState: ObservableObject {
     }
 
     private var transcriptSegments: [String] = []
+
+    init(
+        historyStore: TranscriptHistoryStore? = nil,
+        initialTranscriptHistory: [TranscriptHistoryEntry] = []
+    ) {
+        self.historyStore = historyStore
+        self.transcriptHistory = initialTranscriptHistory
+    }
 
     func resetTranscript() {
         lastTranscript = ""
@@ -152,7 +166,7 @@ final class SessionState: ObservableObject {
     }
 }
 
-struct TranscriptHistoryEntry: Identifiable {
+struct TranscriptHistoryEntry: Codable, Identifiable {
     static let emptyTranscriptionMessage = "No speech was detected or no final transcript was returned."
 
     let id: UUID

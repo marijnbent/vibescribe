@@ -14,6 +14,7 @@ public final class TalkieApp: NSObject, NSApplicationDelegate {
     private var permissionService: PermissionService!
     private var mainViewModel: MainViewModel!
     private var promptRoutingService: PromptRoutingService!
+    private var transcriptHistoryStore: TranscriptHistoryStore!
     private var rawRecordingStore: RawRecordingStore!
 
     private var menuBarController: MenuBarController!
@@ -79,11 +80,16 @@ public final class TalkieApp: NSObject, NSApplicationDelegate {
 
     private func configureState() {
         settingsStore = SettingsStore()
-        sessionState = SessionState()
+        transcriptHistoryStore = TranscriptHistoryStore()
+        rawRecordingStore = RawRecordingStore()
+        let savedHistory = transcriptHistoryStore.loadEntries()
+        sessionState = SessionState(
+            historyStore: transcriptHistoryStore,
+            initialTranscriptHistory: savedHistory
+        )
         permissionService = PermissionService()
         mainViewModel = MainViewModel()
         promptRoutingService = PromptRoutingService()
-        rawRecordingStore = RawRecordingStore()
         audioCapturePort = AudioCaptureControllerAdapter(
             controller: AudioCaptureController(
                 preferredInputProvider: { [weak self] in
@@ -96,6 +102,8 @@ public final class TalkieApp: NSObject, NSApplicationDelegate {
                 rawRecordingStore?.deleteRecording(at: entry.rawRecordingFileURL)
             }
         }
+        sessionState.applyHistoryLimit(settingsStore.historyLimit)
+        rawRecordingStore.pruneRecordings(keeping: sessionState.transcriptHistory.compactMap(\.rawRecordingFileURL))
     }
 
     private func configureWindows() {

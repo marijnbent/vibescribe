@@ -34,8 +34,28 @@ final class RawRecordingStore {
         try? fileManager.removeItem(at: url)
     }
 
+    func pruneRecordings(keeping urls: [URL]) {
+        let allowedPaths = Set(
+            urls.map { $0.standardizedFileURL.path }
+        )
+
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: baseDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+
+        for url in contents {
+            let path = url.standardizedFileURL.path
+            if !allowedPaths.contains(path) {
+                try? fileManager.removeItem(at: url)
+            }
+        }
+    }
+
     private func prepareBaseDirectory() {
-        try? fileManager.removeItem(at: baseDirectory)
         try? fileManager.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
     }
 

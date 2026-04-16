@@ -156,7 +156,8 @@ The package has no external Swift dependencies. The main targets are:
 
 - API keys and settings are stored in `UserDefaults`
 - API keys are not currently stored in the macOS Keychain
-- Transcript history and logs are kept in memory for the current app session
+- Transcript history persists across launches
+- Logs are kept in memory for the current app session
 
 If this project is distributed beyond personal use, moving API key storage to Keychain would be the obvious next hardening step.
 
