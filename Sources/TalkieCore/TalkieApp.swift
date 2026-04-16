@@ -69,7 +69,7 @@ public final class TalkieApp: NSObject, NSApplicationDelegate {
     }
 
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        windowCoordinator.showSettings()
+        showSettingsWindow()
         return true
     }
 
@@ -138,7 +138,7 @@ public final class TalkieApp: NSObject, NSApplicationDelegate {
         menuBarController = MenuBarController(
             settingsStore: settingsStore,
             onOpenMain: { [weak self] in
-                self?.windowCoordinator.showSettings()
+                self?.showSettingsWindow()
             },
             onOpenHistory: { [weak self] in
                 self?.windowCoordinator.showMain(tab: .history)
@@ -160,5 +160,9 @@ public final class TalkieApp: NSObject, NSApplicationDelegate {
                 self?.runtimeCoordinator.cancelFromEsc()
             }
         )
+    }
+
+    private func showSettingsWindow() {
+        windowCoordinator.showSettings()
     }
 }

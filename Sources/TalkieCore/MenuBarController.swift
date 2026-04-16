@@ -35,6 +35,7 @@ final class MenuBarController: NSObject {
     private let openHistoryAction: () -> Void
     private let quitAction: () -> Void
     private var cancellables = Set<AnyCancellable>()
+    private var pendingMenuAction: (() -> Void)?
 
     init(
         settingsStore: SettingsStore,
@@ -118,15 +119,11 @@ final class MenuBarController: NSObject {
     }
 
     @objc private func openMainWindow() {
-        DispatchQueue.main.async { [openMainAction] in
-            openMainAction()
-        }
+        performAfterMenuDismissal(openMainAction)
     }
 
     @objc private func openHistory() {
-        DispatchQueue.main.async { [openHistoryAction] in
-            openHistoryAction()
-        }
+        performAfterMenuDismissal(openHistoryAction)
     }
 
     @objc private func quitApp() {
@@ -140,5 +137,16 @@ final class MenuBarController: NSObject {
         }
 
         settingsStore.deepgramLanguage = language
+    }
+
+    private func performAfterMenuDismissal(_ action: @escaping () -> Void) {
+        pendingMenuAction = action
+        perform(#selector(runPendingMenuAction), with: nil, afterDelay: 0)
+    }
+
+    @objc private func runPendingMenuAction() {
+        let action = pendingMenuAction
+        pendingMenuAction = nil
+        action?()
     }
 }
