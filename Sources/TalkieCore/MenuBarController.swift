@@ -118,11 +118,15 @@ final class MenuBarController: NSObject {
     }
 
     @objc private func openMainWindow() {
-        openMainAction()
+        DispatchQueue.main.async { [openMainAction] in
+            openMainAction()
+        }
     }
 
     @objc private func openHistory() {
-        openHistoryAction()
+        DispatchQueue.main.async { [openHistoryAction] in
+            openHistoryAction()
+        }
     }
 
     @objc private func quitApp() {

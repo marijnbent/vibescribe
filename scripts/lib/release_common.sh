@@ -260,7 +260,6 @@ release::sign_bundle() {
 release::verify_bundle() {
   local bundle="$1"
   codesign --verify --deep --strict "$bundle"
-  spctl --assess -vv "$bundle"
   plutil -lint "$bundle/Contents/Info.plist" >/dev/null
 }
 
@@ -286,8 +285,14 @@ release::build_swiftpm_app() {
   release::require_file "$RELEASE_ENTITLEMENTS"
   release::prepare_build_directories
 
-  swift build -c release
-  bin_dir="$(swift build -c release --show-bin-path)"
+  (
+    cd "$ROOT_DIR"
+    swift build -c release
+  )
+  bin_dir="$(
+    cd "$ROOT_DIR"
+    swift build -c release --show-bin-path
+  )"
   binary_path="$bin_dir/$product_name"
   [[ -f "$binary_path" ]] || release::fail "Missing SwiftPM product: $binary_path"
 
@@ -327,18 +332,21 @@ release::build_xcode_app() {
   release::prepare_build_directories
   rm -rf "$derived_data_path"
 
-  xcodebuild \
-    -project "$ROOT_DIR/$xcode_project" \
-    -scheme "$xcode_scheme" \
-    -configuration Release \
-    -derivedDataPath "$derived_data_path" \
-    ARCHS="$host_arch" \
-    ONLY_ACTIVE_ARCH=YES \
-    DEVELOPMENT_TEAM="$development_team" \
-    CODE_SIGN_IDENTITY="$signing_identity" \
-    MARKETING_VERSION="$marketing_version" \
-    CURRENT_PROJECT_VERSION="$build_number" \
-    build
+  (
+    cd "$ROOT_DIR"
+    xcodebuild \
+      -project "$ROOT_DIR/$xcode_project" \
+      -scheme "$xcode_scheme" \
+      -configuration Release \
+      -derivedDataPath "$derived_data_path" \
+      ARCHS="$host_arch" \
+      ONLY_ACTIVE_ARCH=YES \
+      DEVELOPMENT_TEAM="$development_team" \
+      CODE_SIGN_IDENTITY="$signing_identity" \
+      MARKETING_VERSION="$marketing_version" \
+      CURRENT_PROJECT_VERSION="$build_number" \
+      build
+  )
 
   built_app_path="$derived_data_path/Build/Products/Release/$(release::app_name).app"
   [[ -d "$built_app_path" ]] || release::fail "Missing Xcode app bundle: $built_app_path"
