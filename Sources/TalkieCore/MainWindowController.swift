@@ -79,7 +79,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func showWindowAndActivate() {
-        updateActivationPolicy(forMainWindowIsOpen: true)
+        promoteTalkieToRegularAppIfNeeded()
         let shouldCenterWindow = window?.isVisible != true
         showWindow(nil)
         if shouldCenterWindow {
@@ -89,17 +89,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func windowWillClose(_ notification: Notification) {
-        updateActivationPolicy(forMainWindowIsOpen: false)
-    }
-
-    private func updateActivationPolicy(forMainWindowIsOpen isOpen: Bool) {
-        let policy: NSApplication.ActivationPolicy = isOpen ? .regular : .accessory
-        guard NSApp.activationPolicy() != policy else {
+    private func promoteTalkieToRegularAppIfNeeded() {
+        guard NSApp.activationPolicy() != .regular else {
             return
         }
 
-        NSApp.setActivationPolicy(policy)
+        NSApp.setActivationPolicy(.regular)
     }
 
     @objc private func toolbarItemClicked(_ sender: NSToolbarItem) {
