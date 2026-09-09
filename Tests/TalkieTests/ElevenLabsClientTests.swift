@@ -27,7 +27,7 @@ final class ElevenLabsClientTests: XCTestCase {
         ])
 
         XCTAssertEqual(
-            ElevenLabsClient.downmixPCM16(stereo, channels: 2),
+            AudioBufferConverter.monoPCM16(stereo, channels: 2),
             Data([0x00, 0x00, 0xD0, 0x07])
         )
     }

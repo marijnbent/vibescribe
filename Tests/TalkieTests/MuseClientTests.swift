@@ -82,4 +82,34 @@ final class MuseClientTests: XCTestCase {
         XCTAssertEqual(completeOutput.count, 240 * MemoryLayout<Int16>.size)
         XCTAssertEqual(chunkedOutput, completeOutput)
     }
+
+    func testConverterRetainsOnlyTheNeededSampleAcrossSingleFrameChunks() {
+        for sourceRate in [12_000, 16_000, 24_000, 48_000, 96_000] {
+            let frames: [Int16] = (0..<48).flatMap { frame -> [Int16] in
+                let sample = Int16(frame * 100)
+                return [sample, sample + 2]
+            }
+            let data = frames.withUnsafeBufferPointer { Data(buffer: $0) }
+            let format = AudioStreamFormat(sampleRate: sourceRate, channels: 2)
+            let complete = MusePCMConverter(format: format)
+            var expected = complete.convert(data)
+            expected.append(complete.finish())
+
+            let chunked = MusePCMConverter(format: format)
+            var actual = Data()
+            for offset in stride(from: 0, to: data.count, by: 4) {
+                actual.append(chunked.convert(data[offset..<(offset + 4)]))
+                actual.append(chunked.convert(Data()))
+            }
+            actual.append(chunked.finish())
+            XCTAssertEqual(actual, expected, "Source rate: \(sourceRate)")
+            XCTAssertEqual(chunked.finish(), Data())
+        }
+    }
+
+    func testConverterPassesThroughCompleteMonoSamples() {
+        let converter = MusePCMConverter(format: AudioStreamFormat(sampleRate: 24_000, channels: 1))
+        XCTAssertEqual(converter.convert(Data([0, 128, 255, 127, 42])), Data([0, 128, 255, 127]))
+        XCTAssertEqual(converter.finish(), Data())
+    }
 }

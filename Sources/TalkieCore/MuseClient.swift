@@ -374,7 +374,7 @@ final class MusePCMConverter {
 
     private let sourceSampleRate: Double
     private let channels: Int
-    private var resampleBuffer: [Int16] = []
+    private var lastSample: Int16?
     private var nextOutputPosition: Double = 0
 
     init(format: AudioStreamFormat) {
@@ -385,64 +385,46 @@ final class MusePCMConverter {
     }
 
     func convert(_ data: Data) -> Data {
-        let monoSamples = Self.downmix(data, channels: channels)
-        guard !monoSamples.isEmpty else { return Data() }
+        let monoData = AudioBufferConverter.monoPCM16(data, channels: channels)
+        let sampleCount = monoData.count / MemoryLayout<Int16>.size
         guard Int(sourceSampleRate) != sampleRate else {
-            return Self.data(from: monoSamples)
+            return monoData.prefix(sampleCount * MemoryLayout<Int16>.size)
         }
+        guard sampleCount > 0 else { return Data() }
 
-        resampleBuffer.append(contentsOf: monoSamples)
+        let previousSample = lastSample ?? 0
+        let offset = lastSample == nil ? 0 : 1
+        let availableCount = sampleCount + offset
         let step = sourceSampleRate / Double(sampleRate)
         var output: [Int16] = []
-        output.reserveCapacity(Int(Double(monoSamples.count) / step) + 1)
+        output.reserveCapacity(Int(Double(sampleCount) / step) + 1)
 
-        while nextOutputPosition + 1 < Double(resampleBuffer.count) {
-            let lowerIndex = Int(nextOutputPosition)
-            let fraction = nextOutputPosition - Double(lowerIndex)
-            let lower = Double(resampleBuffer[lowerIndex])
-            let upper = Double(resampleBuffer[lowerIndex + 1])
-            output.append(Int16(clamping: Int((lower + ((upper - lower) * fraction)).rounded())))
-            nextOutputPosition += step
+        monoData.withUnsafeBytes { source in
+            while nextOutputPosition + 1 < Double(availableCount) {
+                let position = Int(nextOutputPosition)
+                let lowerIndex = position - offset
+                let fraction = nextOutputPosition - Double(position)
+                let lower = Double(lowerIndex < 0
+                    ? previousSample
+                    : source.loadUnaligned(fromByteOffset: lowerIndex * 2, as: Int16.self))
+                let upper = Double(source.loadUnaligned(fromByteOffset: (lowerIndex + 1) * 2, as: Int16.self))
+                output.append(Int16(clamping: Int((lower + ((upper - lower) * fraction)).rounded())))
+                nextOutputPosition += step
+            }
+            lastSample = source.loadUnaligned(fromByteOffset: (sampleCount - 1) * 2, as: Int16.self)
         }
 
-        let consumed = min(Int(nextOutputPosition), max(0, resampleBuffer.count - 1))
-        if consumed > 0 {
-            resampleBuffer.removeFirst(consumed)
-            nextOutputPosition -= Double(consumed)
-        }
+        nextOutputPosition -= Double(availableCount - 1)
         return Self.data(from: output)
     }
 
     func finish() -> Data {
-        guard Int(sourceSampleRate) != sampleRate,
-              !resampleBuffer.isEmpty else { return Data() }
-        guard nextOutputPosition <= Double(resampleBuffer.count - 1) else {
-            resampleBuffer = []
+        defer {
+            lastSample = nil
             nextOutputPosition = 0
-            return Data()
         }
-        let sample = resampleBuffer[Int(nextOutputPosition)]
-        resampleBuffer = []
-        nextOutputPosition = 0
-        return Self.data(from: [sample])
-    }
-
-    private static func downmix(_ data: Data, channels: Int) -> [Int16] {
-        let bytesPerFrame = channels * MemoryLayout<Int16>.size
-        guard channels > 0, bytesPerFrame > 0 else { return [] }
-        let frameCount = data.count / bytesPerFrame
-        guard frameCount > 0 else { return [] }
-
-        return data.withUnsafeBytes { rawBuffer in
-            let samples = rawBuffer.bindMemory(to: Int16.self)
-            return (0..<frameCount).map { frame in
-                var sum = 0
-                for channel in 0..<channels {
-                    sum += Int(samples[(frame * channels) + channel])
-                }
-                return Int16(clamping: sum / channels)
-            }
-        }
+        guard let lastSample, nextOutputPosition <= 0 else { return Data() }
+        return Self.data(from: [lastSample])
     }
 
     private static func data(from samples: [Int16]) -> Data {

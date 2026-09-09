@@ -105,7 +105,7 @@ final class ElevenLabsClient: NSObject, @unchecked Sendable {
                   self.isConnected,
                   !self.isClosing else { return }
 
-            let monoData = Self.downmixPCM16(data, channels: self.channels)
+            let monoData = AudioBufferConverter.monoPCM16(data, channels: self.channels)
             let message = ElevenLabsInputAudioChunk(
                 audioBase64: monoData.base64EncodedString(),
                 commit: false,
@@ -314,30 +314,6 @@ final class ElevenLabsClient: NSObject, @unchecked Sendable {
 
     private static func audioFormat(for sampleRate: Int) -> String {
         "pcm_\(sampleRate)"
-    }
-
-    static func downmixPCM16(_ data: Data, channels: Int) -> Data {
-        guard channels > 1 else { return data }
-        let frameBytes = channels * MemoryLayout<Int16>.size
-        guard frameBytes > 0 else { return data }
-        let frameCount = data.count / frameBytes
-        guard frameCount > 0 else { return Data() }
-
-        var result = Data(capacity: frameCount * MemoryLayout<Int16>.size)
-        for frame in 0..<frameCount {
-            var sum: Int = 0
-            for channel in 0..<channels {
-                let offset = (frame * channels + channel) * 2
-                let low = Int(data[offset])
-                let high = Int(data[offset + 1])
-                let bits = Int16(bitPattern: UInt16(low | (high << 8)))
-                sum += Int(bits)
-            }
-            let sample = Int16(clamping: sum / channels)
-            result.append(UInt8(truncatingIfNeeded: sample))
-            result.append(UInt8(truncatingIfNeeded: Int(sample) >> 8))
-        }
-        return result
     }
 
     static func makeInputAudioMessage(

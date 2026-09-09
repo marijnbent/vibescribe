@@ -7,26 +7,6 @@ struct AudioStreamFormat: Sendable, Equatable {
 }
 
 final class AudioCaptureController: NSObject, @unchecked Sendable {
-    private final class ConverterInputSource: @unchecked Sendable {
-        private let buffer: AVAudioPCMBuffer
-        private var didProvideBuffer = false
-
-        init(buffer: AVAudioPCMBuffer) {
-            self.buffer = buffer
-        }
-
-        func nextBuffer(_ outStatus: UnsafeMutablePointer<AVAudioConverterInputStatus>) -> AVAudioPCMBuffer? {
-            if didProvideBuffer {
-                outStatus.pointee = .endOfStream
-                return nil
-            }
-
-            didProvideBuffer = true
-            outStatus.pointee = .haveData
-            return buffer
-        }
-    }
-
     private enum CaptureError: LocalizedError {
         case noInputDeviceAvailable
         case unsupportedInputFormat
@@ -291,7 +271,7 @@ final class AudioCaptureController: NSObject, @unchecked Sendable {
         ]
     }
 
-    private static func pcmBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {
+    static func pcmBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {
         guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
               let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription) else {
             return nil
@@ -332,19 +312,10 @@ final class AudioCaptureController: NSObject, @unchecked Sendable {
             return nil
         }
 
-        let inputSource = ConverterInputSource(buffer: sourceBuffer)
-        var conversionError: NSError?
-        let statusResult = converter.convert(to: targetBuffer, error: &conversionError) { _, outStatus in
-            inputSource.nextBuffer(outStatus)
-        }
-
-        guard conversionError == nil else { return nil }
-        switch statusResult {
-        case .haveData, .inputRanDry, .endOfStream:
+        do {
+            try converter.convert(to: targetBuffer, from: sourceBuffer)
             return targetBuffer
-        case .error:
-            return nil
-        @unknown default:
+        } catch {
             return nil
         }
     }
